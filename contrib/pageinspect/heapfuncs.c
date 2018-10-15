@@ -391,6 +391,103 @@ tuple_data_split_internal(Oid relid, char *tupdata,
 	return makeArrayResult(raw_attrs, CurrentMemoryContext);
 }
 
+static Datum
+tuple_data_split_internal_record(Oid relid, char *tupdata,
+						  uint16 tupdata_len, uint16 t_infomask,
+						  uint16 t_infomask2, bits8 *t_bits)
+{
+	int			nattrs;
+	int			i;
+	int			off = 0;
+	Relation	rel;
+	TupleDesc	tupdesc;
+  Datum *values;
+  bool *isnull;
+
+	/* Get tuple descriptor from relation OID */
+	rel = relation_open(relid, AccessShareLock);
+	tupdesc = RelationGetDescr(rel);
+
+	nattrs = tupdesc->natts;
+  values = palloc(sizeof(Datum) * nattrs);
+  isnull = (bool *)palloc(sizeof(bool) * nattrs);
+
+	if (nattrs < (t_infomask2 & HEAP_NATTS_MASK))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("number of attributes in tuple header is greater than number of attributes in tuple descriptor")));
+
+	for (i = 0; i < nattrs; i++)
+	{
+		Form_pg_attribute attr;
+		bool attr_isnull;
+
+		attr = TupleDescAttr(tupdesc, i);
+
+		/*
+		 * Tuple header can specify less attributes than tuple descriptor as
+		 * ALTER TABLE ADD COLUMN without DEFAULT keyword does not actually
+		 * change tuples in pages, so attributes with numbers greater than
+		 * (t_infomask2 & HEAP_NATTS_MASK) should be treated as NULL.
+		 */
+		if (i >= (t_infomask2 & HEAP_NATTS_MASK))
+			attr_isnull = true;
+		else
+			attr_isnull = (t_infomask & HEAP_HASNULL) && att_isnull(i, t_bits);
+
+    isnull[i] = attr_isnull;
+
+		if (!attr_isnull)
+		{
+			int len;
+
+			if (attr->attlen == -1)
+			{
+				off = att_align_pointer(off, attr->attalign, -1,
+										tupdata + off);
+
+				/*
+				 * As VARSIZE_ANY throws an exception if it can't properly
+				 * detect the type of external storage in macros VARTAG_SIZE,
+				 * this check is repeated to have a nicer error handling.
+				 */
+				if (VARATT_IS_EXTERNAL(tupdata + off) &&
+					!VARATT_IS_EXTERNAL_ONDISK(tupdata + off) &&
+					!VARATT_IS_EXTERNAL_INDIRECT(tupdata + off))
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg("first byte of varlena attribute is incorrect for attribute %d", i)));
+
+				len = VARSIZE_ANY(tupdata + off);
+			}
+			else
+			{
+				off = att_align_nominal(off, attr->attalign);
+				len = attr->attlen;
+			}
+
+			if (tupdata_len < off + len)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("unexpected end of tuple data")));
+
+      values[i] = fetchatt(TupleDescAttr(tupdesc, i), tupdata + off);
+
+			off = att_addlength_pointer(off, attr->attlen,
+										tupdata + off);
+		}
+	}
+
+	if (tupdata_len != off)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("end of tuple reached without looking at all its data")));
+
+	relation_close(rel, AccessShareLock);
+
+  return HeapTupleGetDatum(heap_form_tuple(tupdesc, values, isnull));
+}
+
 /*
  * tuple_data_split
  *
@@ -474,4 +571,83 @@ tuple_data_split(PG_FUNCTION_ARGS)
 		pfree(t_bits);
 
 	PG_RETURN_ARRAYTYPE_P(res);
+}
+
+PG_FUNCTION_INFO_V1(tuple_data_record);
+
+Datum
+tuple_data_record(PG_FUNCTION_ARGS)
+{
+  Oid			relid;
+  bytea	   *raw_data;
+  uint16		t_infomask;
+  uint16		t_infomask2;
+  char	   *t_bits_str;
+  bits8	   *t_bits = NULL;
+  TupleDesc	tupdesc;
+	Datum		res;
+
+  relid = PG_GETARG_OID(0);
+  raw_data = PG_ARGISNULL(1) ? NULL : PG_GETARG_BYTEA_P(1);
+  t_infomask = PG_GETARG_INT16(2);
+  t_infomask2 = PG_GETARG_INT16(3);
+  t_bits_str = PG_ARGISNULL(4) ? NULL :
+    text_to_cstring(PG_GETARG_TEXT_PP(4));
+
+  if (!superuser())
+    ereport(ERROR,
+        (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+         errmsg("must be superuser to use raw page functions")));
+
+  if (!raw_data)
+    PG_RETURN_NULL();
+
+
+  /*
+   * Convert t_bits string back to the bits8 array as represented in the
+   * tuple header.
+   */
+  if (t_infomask & HEAP_HASNULL)
+  {
+    int			bits_str_len;
+    int			bits_len;
+
+    bits_len = BITMAPLEN(t_infomask2 & HEAP_NATTS_MASK) * BITS_PER_BYTE;
+    if (!t_bits_str)
+      ereport(ERROR,
+          (errcode(ERRCODE_DATA_CORRUPTED),
+           errmsg("argument of t_bits is null, but it is expected to be null and %d character long",
+              bits_len)));
+
+    bits_str_len = strlen(t_bits_str);
+    if (bits_len != bits_str_len)
+      ereport(ERROR,
+          (errcode(ERRCODE_DATA_CORRUPTED),
+           errmsg("unexpected length of t_bits %u, expected %d",
+              bits_str_len, bits_len)));
+
+    /* do the conversion */
+    t_bits = text_to_bits(t_bits_str, bits_str_len);
+  }
+  else
+  {
+    if (t_bits_str)
+      ereport(ERROR,
+          (errcode(ERRCODE_DATA_CORRUPTED),
+           errmsg("t_bits string is expected to be NULL, but instead it is %zu bytes length",
+              strlen(t_bits_str))));
+  }
+
+  /* Build a tuple descriptor for our result type */
+  /* if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE) */
+  /*   elog(ERROR, "return type must be a row type"); */
+
+  res = tuple_data_split_internal_record(relid, (char *) raw_data + VARHDRSZ,
+                  VARSIZE(raw_data) - VARHDRSZ,
+                  t_infomask, t_infomask2, t_bits);
+
+	if (t_bits)
+		pfree(t_bits);
+
+  return res;
 }
