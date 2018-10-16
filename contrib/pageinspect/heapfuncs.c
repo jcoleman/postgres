@@ -489,6 +489,51 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 }
 
 /*
+ * parse_and_verify_t_bits
+ *
+ * Convert t_bits string back to the bits8 array as represented in the
+ * tuple header and error check results.
+ */
+bits8 *
+parse_and_verify_t_bits(char *t_bits_str, uint16 t_infomask, uint16 t_infomask2)
+{
+	bits8	   *t_bits = NULL;
+
+	if (t_infomask & HEAP_HASNULL)
+	{
+		int			bits_str_len;
+		int			bits_len;
+
+		bits_len = BITMAPLEN(t_infomask2 & HEAP_NATTS_MASK) * BITS_PER_BYTE;
+		if (!t_bits_str)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("argument of t_bits is null, but it is expected to be null and %d character long",
+							bits_len)));
+
+		bits_str_len = strlen(t_bits_str);
+		if (bits_len != bits_str_len)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("unexpected length of t_bits %u, expected %d",
+							bits_str_len, bits_len)));
+
+		/* do the conversion */
+		t_bits = text_to_bits(t_bits_str, bits_str_len);
+	}
+	else
+	{
+		if (t_bits_str)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("t_bits string is expected to be NULL, but instead it is %zu bytes length",
+							strlen(t_bits_str))));
+	}
+
+  return t_bits;
+}
+
+/*
  * tuple_data_split
  *
  * Split raw tuple data taken directly from page into distinct elements
@@ -526,40 +571,7 @@ tuple_data_split(PG_FUNCTION_ARGS)
 	if (!raw_data)
 		PG_RETURN_NULL();
 
-	/*
-	 * Convert t_bits string back to the bits8 array as represented in the
-	 * tuple header.
-	 */
-	if (t_infomask & HEAP_HASNULL)
-	{
-		int			bits_str_len;
-		int			bits_len;
-
-		bits_len = BITMAPLEN(t_infomask2 & HEAP_NATTS_MASK) * BITS_PER_BYTE;
-		if (!t_bits_str)
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("argument of t_bits is null, but it is expected to be null and %d character long",
-							bits_len)));
-
-		bits_str_len = strlen(t_bits_str);
-		if (bits_len != bits_str_len)
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("unexpected length of t_bits %u, expected %d",
-							bits_str_len, bits_len)));
-
-		/* do the conversion */
-		t_bits = text_to_bits(t_bits_str, bits_str_len);
-	}
-	else
-	{
-		if (t_bits_str)
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("t_bits string is expected to be NULL, but instead it is %zu bytes length",
-							strlen(t_bits_str))));
-	}
+  t_bits = parse_and_verify_t_bits(t_bits_str, t_infomask, t_infomask2);
 
 	/* Split tuple data */
 	res = tuple_data_split_internal(relid, (char *) raw_data + VARHDRSZ,
@@ -602,45 +614,7 @@ tuple_data_record(PG_FUNCTION_ARGS)
   if (!raw_data)
     PG_RETURN_NULL();
 
-
-  /*
-   * Convert t_bits string back to the bits8 array as represented in the
-   * tuple header.
-   */
-  if (t_infomask & HEAP_HASNULL)
-  {
-    int			bits_str_len;
-    int			bits_len;
-
-    bits_len = BITMAPLEN(t_infomask2 & HEAP_NATTS_MASK) * BITS_PER_BYTE;
-    if (!t_bits_str)
-      ereport(ERROR,
-          (errcode(ERRCODE_DATA_CORRUPTED),
-           errmsg("argument of t_bits is null, but it is expected to be null and %d character long",
-              bits_len)));
-
-    bits_str_len = strlen(t_bits_str);
-    if (bits_len != bits_str_len)
-      ereport(ERROR,
-          (errcode(ERRCODE_DATA_CORRUPTED),
-           errmsg("unexpected length of t_bits %u, expected %d",
-              bits_str_len, bits_len)));
-
-    /* do the conversion */
-    t_bits = text_to_bits(t_bits_str, bits_str_len);
-  }
-  else
-  {
-    if (t_bits_str)
-      ereport(ERROR,
-          (errcode(ERRCODE_DATA_CORRUPTED),
-           errmsg("t_bits string is expected to be NULL, but instead it is %zu bytes length",
-              strlen(t_bits_str))));
-  }
-
-  /* Build a tuple descriptor for our result type */
-  /* if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE) */
-  /*   elog(ERROR, "return type must be a row type"); */
+  t_bits = parse_and_verify_t_bits(t_bits_str, t_infomask, t_infomask2);
 
   res = tuple_data_split_internal_record(relid, (char *) raw_data + VARHDRSZ,
                   VARSIZE(raw_data) - VARHDRSZ,
