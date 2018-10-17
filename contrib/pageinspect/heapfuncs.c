@@ -276,8 +276,15 @@ heap_page_items(PG_FUNCTION_ARGS)
 		SRF_RETURN_DONE(fctx);
 }
 
+/*
+ * parse_tuple_attr_info
+ *
+ * Read raw tuple data and determine attribute offset, length, and null status.
+ * This is a reimplementation of nocachegetattr() in heaptuple.c simplified
+ * for educational purposes.
+ */
 static void
-tuple_attr_info(TupleDesc tupdesc, char *tupdata, uint16 tupdata_len,
+parse_tuple_attr_info(TupleDesc tupdesc, char *tupdata, uint16 tupdata_len,
 		uint16 t_infomask, uint16 t_infomask2, bits8 *t_bits,
 		bool *is_null, int *offsets, int *lengths, bool *varlen)
 {
@@ -367,8 +374,7 @@ tuple_attr_info(TupleDesc tupdesc, char *tupdata, uint16 tupdata_len,
  *
  * Split raw tuple data taken directly from a page into an array of bytea
  * elements. This routine does a lookup on NULL values and creates array
- * elements accordingly. This is a reimplementation of nocachegetattr()
- * in heaptuple.c simplified for educational purposes.
+ * elements accordingly.
  */
 static Datum
 tuple_data_split_internal(Oid relid, char *tupdata,
@@ -397,7 +403,7 @@ tuple_data_split_internal(Oid relid, char *tupdata,
 	offsets = (int *)palloc(sizeof(int) * nattrs);
 	lengths = (int *)palloc(sizeof(int) * nattrs);
 
-	tuple_attr_info(tupdesc, tupdata, tupdata_len, t_infomask, t_infomask2, t_bits,
+	parse_tuple_attr_info(tupdesc, tupdata, tupdata_len, t_infomask, t_infomask2, t_bits,
 		isnull, offsets, lengths, varlen);
 
 	/* Fetch all tuple attribute values */
@@ -424,6 +430,12 @@ tuple_data_split_internal(Oid relid, char *tupdata,
 	return makeArrayResult(raw_attrs, CurrentMemoryContext);
 }
 
+/*
+ * tuple_data_record_internal
+ *
+ * Split raw tuple data taken directly from a page into record of the page's
+ * relation's row tyoe.
+ */
 static Datum
 tuple_data_split_internal_record(Oid relid, char *tupdata,
 							uint16 tupdata_len, uint16 t_infomask,
@@ -448,7 +460,7 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 	lengths = (int *)palloc(sizeof(int) * nattrs);
 	values = palloc(sizeof(Datum) * nattrs);
 
-	tuple_attr_info(tupdesc, tupdata, tupdata_len, t_infomask, t_infomask2, t_bits,
+	parse_tuple_attr_info(tupdesc, tupdata, tupdata_len, t_infomask, t_infomask2, t_bits,
 		isnull, offsets, lengths, NULL);
 
 	/* Fetch all tuple attribute values */
