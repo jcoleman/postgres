@@ -276,142 +276,16 @@ heap_page_items(PG_FUNCTION_ARGS)
 		SRF_RETURN_DONE(fctx);
 }
 
-/*
- * tuple_data_split_internal
- *
- * Split raw tuple data taken directly from a page into an array of bytea
- * elements. This routine does a lookup on NULL values and creates array
- * elements accordingly. This is a reimplementation of nocachegetattr()
- * in heaptuple.c simplified for educational purposes.
- */
-static Datum
-tuple_data_split_internal(Oid relid, char *tupdata,
-						  uint16 tupdata_len, uint16 t_infomask,
-						  uint16 t_infomask2, bits8 *t_bits,
-						  bool do_detoast)
+static void
+tuple_attr_info(TupleDesc tupdesc, char *tupdata, uint16 tupdata_len,
+		uint16 t_infomask, uint16 t_infomask2, bits8 *t_bits,
+		bool *is_null, int *offsets, int *lengths, bool *varlen)
 {
-	ArrayBuildState *raw_attrs;
-	int			nattrs;
 	int			i;
-	int			off = 0;
-	Relation	rel;
-	TupleDesc	tupdesc;
-
-	/* Get tuple descriptor from relation OID */
-	rel = relation_open(relid, AccessShareLock);
-	tupdesc = RelationGetDescr(rel);
-
-	raw_attrs = initArrayResult(BYTEAOID, CurrentMemoryContext, false);
-	nattrs = tupdesc->natts;
-
-	if (nattrs < (t_infomask2 & HEAP_NATTS_MASK))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("number of attributes in tuple header is greater than number of attributes in tuple descriptor")));
-
-	for (i = 0; i < nattrs; i++)
-	{
-		Form_pg_attribute attr;
-		bool		is_null;
-		bytea	   *attr_data = NULL;
-
-		attr = TupleDescAttr(tupdesc, i);
-
-		/*
-		 * Tuple header can specify less attributes than tuple descriptor as
-		 * ALTER TABLE ADD COLUMN without DEFAULT keyword does not actually
-		 * change tuples in pages, so attributes with numbers greater than
-		 * (t_infomask2 & HEAP_NATTS_MASK) should be treated as NULL.
-		 */
-		if (i >= (t_infomask2 & HEAP_NATTS_MASK))
-			is_null = true;
-		else
-			is_null = (t_infomask & HEAP_HASNULL) && att_isnull(i, t_bits);
-
-		if (!is_null)
-		{
-			int			len;
-
-			if (attr->attlen == -1)
-			{
-				off = att_align_pointer(off, attr->attalign, -1,
-										tupdata + off);
-
-				/*
-				 * As VARSIZE_ANY throws an exception if it can't properly
-				 * detect the type of external storage in macros VARTAG_SIZE,
-				 * this check is repeated to have a nicer error handling.
-				 */
-				if (VARATT_IS_EXTERNAL(tupdata + off) &&
-					!VARATT_IS_EXTERNAL_ONDISK(tupdata + off) &&
-					!VARATT_IS_EXTERNAL_INDIRECT(tupdata + off))
-					ereport(ERROR,
-							(errcode(ERRCODE_DATA_CORRUPTED),
-							 errmsg("first byte of varlena attribute is incorrect for attribute %d", i)));
-
-				len = VARSIZE_ANY(tupdata + off);
-			}
-			else
-			{
-				off = att_align_nominal(off, attr->attalign);
-				len = attr->attlen;
-			}
-
-			if (tupdata_len < off + len)
-				ereport(ERROR,
-						(errcode(ERRCODE_DATA_CORRUPTED),
-						 errmsg("unexpected end of tuple data")));
-
-			if (attr->attlen == -1 && do_detoast)
-				attr_data = DatumGetByteaPCopy(tupdata + off);
-			else
-			{
-				attr_data = (bytea *) palloc(len + VARHDRSZ);
-				SET_VARSIZE(attr_data, len + VARHDRSZ);
-				memcpy(VARDATA(attr_data), tupdata + off, len);
-			}
-
-			off = att_addlength_pointer(off, attr->attlen,
-										tupdata + off);
-		}
-
-		raw_attrs = accumArrayResult(raw_attrs, PointerGetDatum(attr_data),
-									 is_null, BYTEAOID, CurrentMemoryContext);
-		if (attr_data)
-			pfree(attr_data);
-	}
-
-	if (tupdata_len != off)
-		ereport(ERROR,
-				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("end of tuple reached without looking at all its data")));
-
-	relation_close(rel, AccessShareLock);
-
-	return makeArrayResult(raw_attrs, CurrentMemoryContext);
-}
-
-static Datum
-tuple_data_split_internal_record(Oid relid, char *tupdata,
-						  uint16 tupdata_len, uint16 t_infomask,
-						  uint16 t_infomask2, bits8 *t_bits)
-{
-	int			nattrs;
-	int			i;
-	int			off = 0;
-	Relation	rel;
-	TupleDesc	tupdesc;
-  Datum *values;
-  bool *isnull;
-
-	/* Get tuple descriptor from relation OID */
-	rel = relation_open(relid, AccessShareLock);
-	tupdesc = RelationGetDescr(rel);
+	int nattrs;
+	int off = 0;
 
 	nattrs = tupdesc->natts;
-  values = palloc(sizeof(Datum) * nattrs);
-  isnull = (bool *)palloc(sizeof(bool) * nattrs);
-
 	if (nattrs < (t_infomask2 & HEAP_NATTS_MASK))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -435,7 +309,7 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 		else
 			attr_isnull = (t_infomask & HEAP_HASNULL) && att_isnull(i, t_bits);
 
-    isnull[i] = attr_isnull;
+		is_null[i] = attr_isnull;
 
 		if (!attr_isnull)
 		{
@@ -443,6 +317,8 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 
 			if (attr->attlen == -1)
 			{
+				if (varlen)
+					varlen[i] = true;
 				off = att_align_pointer(off, attr->attalign, -1,
 										tupdata + off);
 
@@ -471,7 +347,8 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg("unexpected end of tuple data")));
 
-      values[i] = fetchatt(TupleDescAttr(tupdesc, i), tupdata + off);
+			lengths[i] = len;
+			offsets[i] = off;
 
 			off = att_addlength_pointer(off, attr->attlen,
 										tupdata + off);
@@ -482,10 +359,107 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("end of tuple reached without looking at all its data")));
+}
+
+
+/*
+ * tuple_data_split_internal
+ *
+ * Split raw tuple data taken directly from a page into an array of bytea
+ * elements. This routine does a lookup on NULL values and creates array
+ * elements accordingly. This is a reimplementation of nocachegetattr()
+ * in heaptuple.c simplified for educational purposes.
+ */
+static Datum
+tuple_data_split_internal(Oid relid, char *tupdata,
+							uint16 tupdata_len, uint16 t_infomask,
+							uint16 t_infomask2, bits8 *t_bits,
+							bool do_detoast)
+{
+	ArrayBuildState *raw_attrs;
+	int			nattrs;
+	int			i;
+	Relation	rel;
+	TupleDesc	tupdesc;
+	bool *isnull;
+	bool *varlen;
+	int *offsets;
+	int *lengths;
+
+	/* Get tuple descriptor from relation OID */
+	rel = relation_open(relid, AccessShareLock);
+	tupdesc = RelationGetDescr(rel);
+
+	raw_attrs = initArrayResult(BYTEAOID, CurrentMemoryContext, false);
+	nattrs = tupdesc->natts;
+	isnull = (bool *)palloc(sizeof(bool) * nattrs);
+	varlen = (bool *)palloc0(sizeof(bool) * nattrs);
+	offsets = (int *)palloc(sizeof(int) * nattrs);
+	lengths = (int *)palloc(sizeof(int) * nattrs);
+
+	tuple_attr_info(tupdesc, tupdata, tupdata_len, t_infomask, t_infomask2, t_bits,
+		isnull, offsets, lengths, varlen);
+
+	/* Fetch all tuple attribute values */
+	for (i = 0; i < nattrs; i++)
+	{
+		bytea *attr_data = NULL;
+			if (varlen[i] && do_detoast)
+				attr_data = DatumGetByteaPCopy(tupdata + offsets[i]);
+			else
+			{
+				attr_data = (bytea *) palloc(lengths[i] + VARHDRSZ);
+				SET_VARSIZE(attr_data, lengths[i] + VARHDRSZ);
+				memcpy(VARDATA(attr_data), tupdata + offsets[i], lengths[i]);
+			}
+
+		raw_attrs = accumArrayResult(raw_attrs, PointerGetDatum(attr_data),
+									 isnull[i], BYTEAOID, CurrentMemoryContext);
+		if (attr_data)
+			pfree(attr_data);
+	}
 
 	relation_close(rel, AccessShareLock);
 
-  return HeapTupleGetDatum(heap_form_tuple(tupdesc, values, isnull));
+	return makeArrayResult(raw_attrs, CurrentMemoryContext);
+}
+
+static Datum
+tuple_data_split_internal_record(Oid relid, char *tupdata,
+							uint16 tupdata_len, uint16 t_infomask,
+							uint16 t_infomask2, bits8 *t_bits)
+{
+	int i;
+	int nattrs;
+	Relation	rel;
+	TupleDesc	tupdesc;
+	Datum *values;
+	bool *isnull;
+	int *offsets;
+	int *lengths;
+
+	/* Get tuple descriptor from relation OID */
+	rel = relation_open(relid, AccessShareLock);
+	tupdesc = RelationGetDescr(rel);
+
+	nattrs = tupdesc->natts;
+	isnull = (bool *)palloc(sizeof(bool) * nattrs);
+	offsets = (int *)palloc(sizeof(int) * nattrs);
+	lengths = (int *)palloc(sizeof(int) * nattrs);
+	values = palloc(sizeof(Datum) * nattrs);
+
+	tuple_attr_info(tupdesc, tupdata, tupdata_len, t_infomask, t_infomask2, t_bits,
+		isnull, offsets, lengths, NULL);
+
+	/* Fetch all tuple attribute values */
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		values[i] = fetchatt(TupleDescAttr(tupdesc, i), tupdata + offsets[i]);
+	}
+
+	relation_close(rel, AccessShareLock);
+
+	return HeapTupleGetDatum(heap_form_tuple(tupdesc, values, isnull));
 }
 
 /*
@@ -497,7 +471,7 @@ tuple_data_split_internal_record(Oid relid, char *tupdata,
 bits8 *
 parse_and_verify_t_bits(char *t_bits_str, uint16 t_infomask, uint16 t_infomask2)
 {
-	bits8	   *t_bits = NULL;
+	bits8	*t_bits = NULL;
 
 	if (t_infomask & HEAP_HASNULL)
 	{
@@ -530,7 +504,7 @@ parse_and_verify_t_bits(char *t_bits_str, uint16 t_infomask, uint16 t_infomask2)
 							strlen(t_bits_str))));
 	}
 
-  return t_bits;
+	return t_bits;
 }
 
 /*
@@ -571,7 +545,7 @@ tuple_data_split(PG_FUNCTION_ARGS)
 	if (!raw_data)
 		PG_RETURN_NULL();
 
-  t_bits = parse_and_verify_t_bits(t_bits_str, t_infomask, t_infomask2);
+	t_bits = parse_and_verify_t_bits(t_bits_str, t_infomask, t_infomask2);
 
 	/* Split tuple data */
 	res = tuple_data_split_internal(relid, (char *) raw_data + VARHDRSZ,
@@ -590,38 +564,38 @@ PG_FUNCTION_INFO_V1(tuple_data_record);
 Datum
 tuple_data_record(PG_FUNCTION_ARGS)
 {
-  Oid			relid;
-  bytea	   *raw_data;
-  uint16		t_infomask;
-  uint16		t_infomask2;
-  char	   *t_bits_str;
-  bits8	   *t_bits = NULL;
-  TupleDesc	tupdesc;
-	Datum		res;
+	Oid	relid;
+	bytea *raw_data;
+	uint16 t_infomask;
+	uint16 t_infomask2;
+	char *t_bits_str;
+	bits8 *t_bits = NULL;
+	TupleDesc	tupdesc;
+	Datum res;
 
-  relid = PG_GETARG_OID(0);
-  raw_data = PG_ARGISNULL(1) ? NULL : PG_GETARG_BYTEA_P(1);
-  t_infomask = PG_GETARG_INT16(2);
-  t_infomask2 = PG_GETARG_INT16(3);
-  t_bits_str = PG_ARGISNULL(4) ? NULL :
-    text_to_cstring(PG_GETARG_TEXT_PP(4));
+	relid = PG_GETARG_OID(0);
+	raw_data = PG_ARGISNULL(1) ? NULL : PG_GETARG_BYTEA_P(1);
+	t_infomask = PG_GETARG_INT16(2);
+	t_infomask2 = PG_GETARG_INT16(3);
+	t_bits_str = PG_ARGISNULL(4) ? NULL :
+		text_to_cstring(PG_GETARG_TEXT_PP(4));
 
-  if (!superuser())
-    ereport(ERROR,
-        (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-         errmsg("must be superuser to use raw page functions")));
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to use raw page functions")));
 
-  if (!raw_data)
-    PG_RETURN_NULL();
+	if (!raw_data)
+		PG_RETURN_NULL();
 
-  t_bits = parse_and_verify_t_bits(t_bits_str, t_infomask, t_infomask2);
+	t_bits = parse_and_verify_t_bits(t_bits_str, t_infomask, t_infomask2);
 
-  res = tuple_data_split_internal_record(relid, (char *) raw_data + VARHDRSZ,
-                  VARSIZE(raw_data) - VARHDRSZ,
-                  t_infomask, t_infomask2, t_bits);
+	res = tuple_data_split_internal_record(relid, (char *) raw_data + VARHDRSZ,
+									VARSIZE(raw_data) - VARHDRSZ,
+									t_infomask, t_infomask2, t_bits);
 
 	if (t_bits)
 		pfree(t_bits);
 
-  return res;
+	return res;
 }

@@ -29,6 +29,9 @@ SELECT page_checksum(get_raw_page('test1', 0), 0) IS NOT NULL AS silly_checksum_
 SELECT tuple_data_split('test1'::regclass, t_data, t_infomask, t_infomask2, t_bits)
     FROM heap_page_items(get_raw_page('test1', 0));
 
+SELECT tuple_data_record('test1'::regclass, t_data, t_infomask, t_infomask2, t_bits)
+    FROM heap_page_items(get_raw_page('test1', 0));
+
 SELECT * FROM fsm_page_contents(get_raw_page('test1', 'fsm', 0));
 
 DROP TABLE test1;
