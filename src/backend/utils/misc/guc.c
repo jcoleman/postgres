@@ -52,6 +52,7 @@
 #include "optimizer/geqo.h"
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
+#include "optimizer/predtest.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_type.h"
 #include "parser/parser.h"
@@ -3061,6 +3062,20 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&gin_pending_list_limit,
 		4096, 64, MAX_KILOBYTES,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"array_optimization_size_limit", PGC_USERSET, QUERY_TUNING_OTHER,
+			gettext_noop("Sets the array size limit beyond which predicate "
+						 "optimization is not used."),
+			gettext_noop("The optimizer evaluates scalar array expressions "
+						 "to determine if they can be treated as AND or OR clauses. "
+						 "This optimization proving is only performed if the array "
+						 "contains at most this many items.")
+		},
+		&array_optimization_size_limit,
+		ARRAY_OPTIMIZATION_SIZE_LIMIT, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
