@@ -637,6 +637,9 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	 * Ensure the expression exposes the correct type and collation.
 	 */
 	expr = canonicalize_ec_expression(expr, opcintype, collation);
+  /* expr here is always one var? (at least in my testing on this query) */
+  /* printf("expr:\n"); */
+  /* pprint(expr); */
 
 	/*
 	 * Get the precise set of nullable relids appearing in the expression.

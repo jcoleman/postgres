@@ -205,6 +205,8 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 			 equality_op);
 
 	/* Now find or (optionally) create a matching EquivalenceClass */
+  printf("getting eclass for sort expr\n");
+  /* we get here */
 	eclass = get_eclass_for_sort_expr(root, expr, nullable_relids,
 									  opfamilies, opcintype, collation,
 									  sortref, rel, create_it);
@@ -214,6 +216,8 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 		return NULL;
 
 	/* And finally we can find or create a PathKey node */
+  printf("making canonical pathkey\n");
+  /* we don't make it here for the int column (we do for the timestamp) */
 	return make_canonical_pathkey(root, eclass, opfamily,
 								  strategy, nulls_first);
 }
@@ -324,6 +328,78 @@ pathkeys_contained_in(List *keys1, List *keys2)
 		default:
 			break;
 	}
+	return false;
+}
+
+/*
+ * pathkeys_sublist_of
+ *	  We want to know if keys2 provides all of keys1 allowing for some
+ *	  unneeded prefix.
+ */
+bool
+pathkeys_sublist_of(List *keys1, List *keys2)
+{
+	ListCell   *key1,
+			   *key2,
+			   *key2outer;
+  PathKey    *match = NULL;
+  int i = 0, j;
+	/*
+	 * Fall out quickly if we are passed two identical lists.  This mostly
+	 * catches the case where both are NIL, but that's common enough to
+	 * warrant the test.
+	 */
+	if (keys1 == keys2)
+		return true;
+
+  printf("pathkeys_sublist_of: %u, %u\n", keys1, keys2);
+  foreach(key2outer, keys2)
+  {
+    ListCell *keys1head = list_head(keys1);
+
+    j = 0;
+    for_both_cell(key1, keys1head, key2, key2outer)
+    {
+      PathKey    *pathkey1 = (PathKey *) lfirst(key1);
+      PathKey    *pathkey2 = (PathKey *) lfirst(key2);
+
+      if (!match && pathkey1 == pathkey2)
+      {
+        match = pathkey1;
+        printf("found match %u, %u\n", i, j);
+      }
+      else if (match && pathkey1 != pathkey2)
+      {
+        printf("ret false early %u, %u\n", i, j);
+        return false;
+      }
+      else
+        printf("loop %u, %u\n", i, j);
+      j++;
+    }
+    i++;
+  }
+
+	/*
+	 * If we reached the end of only one list, the other is longer and
+	 * therefore not a subset.
+	 */
+  if (match)
+  {
+    if (key1 != NULL)
+    {
+      printf("sublist key1 is longer\n");
+      return false;	/* key1 is longer */
+    }
+    if (key2 != NULL)
+    {
+      printf("sublist key2 is longer\n");
+      return true;	/* key2 is longer */
+    }
+    printf("sublist match: true\n");
+    return true;	/* key2 is longer */
+  }
+  printf("sublist base case: false\n");
 	return false;
 }
 
@@ -470,6 +546,7 @@ build_index_pathkeys(PlannerInfo *root,
 	if (index->sortopfamily == NULL)
 		return NIL;				/* non-orderable index */
 
+  printf("\nbegin build_index_pathkeys\n");
 	i = 0;
 	foreach(lc, index->indextlist)
 	{
@@ -514,7 +591,9 @@ build_index_pathkeys(PlannerInfo *root,
 											  nulls_first,
 											  0,
 											  index->rel->relids,
-											  false);
+                        /* we can make it generate a new ec for the saop in a terrible way here w/true  */
+                        /* but that still doesn't result in the path key being used; much like the int= case */
+											  true);
 
 		if (cpathkey)
 		{
@@ -523,10 +602,18 @@ build_index_pathkeys(PlannerInfo *root,
 			 * for this query.  Add it to list, unless it's redundant.
 			 */
 			if (!pathkey_is_redundant(cpathkey, retval))
+      {
+        printf("found pathkey %u\n", i);
+        /* pprint(cpathkey); */
 				retval = lappend(retval, cpathkey);
+      }
+      else
+        printf("found pathkey but was redundant %u\n", i);
 		}
 		else
 		{
+      /* we get to here */
+        printf("did not find pathkey %u\n", i);
 			/*
 			 * Boolean index keys might be redundant even if they do not
 			 * appear in an EquivalenceClass, because of our special treatment
@@ -538,12 +625,22 @@ build_index_pathkeys(PlannerInfo *root,
 			 * keys won't be useful either.
 			 */
 			if (!indexcol_is_bool_constant_for_query(index, i))
-				break;
+      {
+        /* adding this line allows up to build up a list instead of
+         * ignoring indexes with an extra prefix. */
+        /* if (retval) */
+        /* { */
+          printf("breaking out of loop b/c !bool_const\n");
+          break;
+        /* } */
+      }
 		}
 
 		i++;
 	}
 
+  /* printf("build_index_pathkeys retval:\n"); */
+  /*     pprint(retval); */
 	return retval;
 }
 
@@ -1596,17 +1693,29 @@ right_merge_direction(PlannerInfo *root, PathKey *pathkey)
 static int
 pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 {
+  bool sublist;
+  printf("\nentering pathkeys_useful_for_ordering\n");
 	if (root->query_pathkeys == NIL)
+  {
+    printf("root->query_pathkeys == NIL\n");
 		return 0;				/* no special ordering requested */
+  }
 
 	if (pathkeys == NIL)
+  {
+    printf("root->query_pathkeys == NIL\n");
 		return 0;				/* unordered path */
+  }
 
-	if (pathkeys_contained_in(root->query_pathkeys, pathkeys))
+  sublist = pathkeys_sublist_of(root->query_pathkeys, pathkeys);
+  printf("pathkeys_sublist_of returned %u\n", sublist);
+	if (sublist || pathkeys_contained_in(root->query_pathkeys, pathkeys))
 	{
 		/* It's useful ... or at least the first N keys are */
 		return list_length(root->query_pathkeys);
 	}
+  /* else if (pathkeys_sublist_of(root->query_pathkeys, pathkeys)) */
+  /*   printf("query pathkeys was sublist of index pathkeys"); */
 
 	return 0;					/* path ordering not useful */
 }
@@ -1623,8 +1732,14 @@ truncate_useless_pathkeys(PlannerInfo *root,
 	int			nuseful;
 	int			nuseful2;
 
+  printf("\ntruncating useless pathkeys with input:\n");
+  /* pprint(pathkeys); */
+
 	nuseful = pathkeys_useful_for_merging(root, rel, pathkeys);
+  printf("pathkeys_useful_for_merging: %u\n", nuseful);
 	nuseful2 = pathkeys_useful_for_ordering(root, pathkeys);
+  printf("pathkeys_useful_for_ordering: %u\n", nuseful2);
+
 	if (nuseful2 > nuseful)
 		nuseful = nuseful2;
 
@@ -1637,6 +1752,7 @@ truncate_useless_pathkeys(PlannerInfo *root,
 	else if (nuseful == list_length(pathkeys))
 		return pathkeys;
 	else
+    /* This is the problem here: we truncate off assuming there can be no prefix */
 		return list_truncate(list_copy(pathkeys), nuseful);
 }
 

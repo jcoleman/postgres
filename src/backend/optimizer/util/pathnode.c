@@ -1064,6 +1064,12 @@ create_index_path(PlannerInfo *root,
 
 	cost_index(pathnode, root, loop_count, partial_path);
 
+
+#ifdef OPTIMIZER_DEBUG
+		/* printf("create_index_path:\n"); */
+		/* pprint(pathnode); */
+#endif
+
 	return pathnode;
 }
 
