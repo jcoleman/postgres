@@ -877,6 +877,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	bool		pathkeys_are_sublist;
 	bool		index_is_ordered;
 	bool		index_only_scan;
+  bool    index_ordered_after_array;
 	int			indexcol;
 
 	/*
@@ -1006,7 +1007,8 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
     /* pathkeys_are_sublist =  */
     /* printf("pathkeys_sublist_of: %u\n", pathkeys_sublist_of(root->query_pathkeys, index_pathkeys)); */
 		useful_pathkeys = truncate_useless_pathkeys(root, rel,
-													index_pathkeys);
+													index_pathkeys, 
+                          &index_ordered_after_array); /* TODO: only pass if index->amcanorderinarray */
 		orderbyclauses = NIL;
 		orderbyclausecols = NIL;
 	}
@@ -1045,6 +1047,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	if (index_clauses != NIL || useful_pathkeys != NIL || useful_predicate ||
 		index_only_scan)
 	{
+    /* TODO: here's the next spot to investigate */
 		ipath = create_index_path(root, index,
 								  index_clauses,
 								  clause_columns,
@@ -1101,7 +1104,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 		index_pathkeys = build_index_pathkeys(root, index,
 											  BackwardScanDirection);
 		useful_pathkeys = truncate_useless_pathkeys(root, rel,
-													index_pathkeys);
+													index_pathkeys, NULL);
 		if (useful_pathkeys != NIL)
 		{
 			ipath = create_index_path(root, index,

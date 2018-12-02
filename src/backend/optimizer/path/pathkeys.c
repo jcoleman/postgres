@@ -332,25 +332,19 @@ pathkeys_contained_in(List *keys1, List *keys2)
 }
 
 /*
- * pathkeys_sublist_of
+ * pathkeys_sublist
  *	  We want to know if keys2 provides all of keys1 allowing for some
  *	  unneeded prefix.
  */
-bool
-pathkeys_sublist_of(List *keys1, List *keys2)
+List *
+pathkeys_sublist(List *keys1, List *keys2)
 {
 	ListCell   *key1,
 			   *key2,
 			   *key2outer;
+  List       *ret;
   PathKey    *match = NULL;
   int i = 0, j;
-	/*
-	 * Fall out quickly if we are passed two identical lists.  This mostly
-	 * catches the case where both are NIL, but that's common enough to
-	 * warrant the test.
-	 */
-	if (keys1 == keys2)
-		return true;
 
   printf("pathkeys_sublist_of: %u, %u\n", keys1, keys2);
   foreach(key2outer, keys2)
@@ -362,10 +356,12 @@ pathkeys_sublist_of(List *keys1, List *keys2)
     {
       PathKey    *pathkey1 = (PathKey *) lfirst(key1);
       PathKey    *pathkey2 = (PathKey *) lfirst(key2);
+      ret = NULL;
 
       if (!match && pathkey1 == pathkey2)
       {
         match = pathkey1;
+        ret = list_make1(pathkey1);
         printf("found match %u, %u\n", i, j);
       }
       else if (match && pathkey1 != pathkey2)
@@ -374,7 +370,10 @@ pathkeys_sublist_of(List *keys1, List *keys2)
         return false;
       }
       else
+      {
         printf("loop %u, %u\n", i, j);
+        ret = lappend(ret, pathkey1);
+      }
       j++;
     }
     i++;
@@ -389,18 +388,18 @@ pathkeys_sublist_of(List *keys1, List *keys2)
     if (key1 != NULL)
     {
       printf("sublist key1 is longer\n");
-      return false;	/* key1 is longer */
+      return NIL;	/* key1 is longer */
     }
     if (key2 != NULL)
     {
       printf("sublist key2 is longer\n");
-      return true;	/* key2 is longer */
+      return ret;	/* key2 is longer */
     }
     printf("sublist match: true\n");
-    return true;	/* key2 is longer */
+    return ret;	/* key2 is longer */
   }
   printf("sublist base case: false\n");
-	return false;
+	return NIL;
 }
 
 /*
@@ -942,7 +941,7 @@ build_join_pathkeys(PlannerInfo *root,
 	 * contain pathkeys that were useful for forming this joinrel but are
 	 * uninteresting to higher levels.
 	 */
-	return truncate_useless_pathkeys(root, joinrel, outer_pathkeys);
+	return truncate_useless_pathkeys(root, joinrel, outer_pathkeys, NULL);
 }
 
 /****************************************************************************
@@ -1707,8 +1706,8 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 		return 0;				/* unordered path */
   }
 
-  sublist = pathkeys_sublist_of(root->query_pathkeys, pathkeys);
-  printf("pathkeys_sublist_of returned %u\n", sublist);
+  /* sublist = pathkeys_sublist_of(root->query_pathkeys, pathkeys); */
+  /* printf("pathkeys_sublist_of returned %u\n", sublist); */
 	if (sublist || pathkeys_contained_in(root->query_pathkeys, pathkeys))
 	{
 		/* It's useful ... or at least the first N keys are */
@@ -1727,10 +1726,13 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 List *
 truncate_useless_pathkeys(PlannerInfo *root,
 						  RelOptInfo *rel,
-						  List *pathkeys)
+						  List *pathkeys,
+              bool *index_ordered_after_array)
 {
 	int			nuseful;
 	int			nuseful2;
+  int     nusefulorder;
+  int     nusefulorderinarray = 0;
 
   printf("\ntruncating useless pathkeys with input:\n");
   /* pprint(pathkeys); */
@@ -1748,7 +1750,20 @@ truncate_useless_pathkeys(PlannerInfo *root,
 	 * copying the list if we're not actually going to change it
 	 */
 	if (nuseful == 0)
+  {
+    if (index_ordered_after_array != NIL)
+    {
+      /* TODO: this isn't technically accurate because we can only
+       * use the subset approach in certain situations (e.g., when the
+       * first op is a ScalarArrayOpExpr. */
+      List *ret = pathkeys_sublist(root->query_pathkeys, pathkeys);
+      printf("returning pathkeys_sublist: \n");
+      pprint(ret);
+      *index_ordered_after_array = true;
+      return ret;
+    }
 		return NIL;
+  }
 	else if (nuseful == list_length(pathkeys))
 		return pathkeys;
 	else

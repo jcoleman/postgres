@@ -231,9 +231,10 @@ extern List *make_inner_pathkeys_for_merge(PlannerInfo *root,
 extern List *trim_mergeclauses_for_inner_pathkeys(PlannerInfo *root,
 									 List *mergeclauses,
 									 List *pathkeys);
-extern List *truncate_useless_pathkeys(PlannerInfo *root,
+extern List * truncate_useless_pathkeys(PlannerInfo *root,
 						  RelOptInfo *rel,
-						  List *pathkeys);
+						  List *pathkeys,
+              bool *index_ordered_after_array);
 extern bool has_useful_pathkeys(PlannerInfo *root, RelOptInfo *rel);
 extern PathKey *make_canonical_pathkey(PlannerInfo *root,
 					   EquivalenceClass *eclass, Oid opfamily,
