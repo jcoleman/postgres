@@ -1025,6 +1025,7 @@ create_index_path(PlannerInfo *root,
 				  IndexOptInfo *index,
 				  List *indexclauses,
 				  List *indexclausecols,
+          /* Only set when amcanorderbyop */
 				  List *indexorderbys,
 				  List *indexorderbycols,
 				  List *pathkeys,
