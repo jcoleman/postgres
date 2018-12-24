@@ -120,6 +120,8 @@ IndexNext(IndexScanState *node)
 
 		node->iss_ScanDesc = scandesc;
 
+    /* scandesc->orderWithinArrayKeys = node->ss.ps.plan->orderWithinArrayKeys; */
+
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
 		 * pass the scankeys to the index AM.
