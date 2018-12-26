@@ -87,6 +87,7 @@ IndexNext(IndexScanState *node)
 	HeapTuple	tuple;
 	TupleTableSlot *slot;
 
+	/*fprintf(stderr, "In IndexNext\n");*/
 	/*
 	 * extract necessary information from index scan node
 	 */
@@ -110,6 +111,7 @@ IndexNext(IndexScanState *node)
 		 * We reach here if the index scan is not parallel, or if we're
 		 * serially executing an index scan that was planned to be parallel.
 		 */
+		fprintf(stderr, "In IndexNext: setting up scandesc\n");
 		scandesc = index_beginscan(node->ss.ss_currentRelation,
 								   node->iss_RelationDesc,
 								   estate->es_snapshot,
@@ -541,6 +543,7 @@ static TupleTableSlot *
 ExecIndexScan(PlanState *pstate)
 {
 	IndexScanState *node = castNode(IndexScanState, pstate);
+	/* fprintf(stderr, "In ExecIndexScan\n"); */
 
 	/*
 	 * If we have runtime keys and they've not already been set up, do it now.
@@ -746,7 +749,8 @@ ExecIndexEvalArrayKeys(ExprContext *econtext,
 	return result;
 }
 
-/*
+/* NOTE: appears to only be used by nodeBitmapIndexscan
+ *
  * ExecIndexAdvanceArrayKeys
  *		Advance to the next set of array key values, if any.
  *
@@ -765,6 +769,7 @@ ExecIndexAdvanceArrayKeys(IndexArrayKeyInfo *arrayKeys, int numArrayKeys)
 	 * qualifications.  This is hypothesized to result in better locality of
 	 * access in the index.
 	 */
+	fprintf(stderr, "in ExecIndexAdvanceArrayKeys\n");
 	for (j = numArrayKeys - 1; j >= 0; j--)
 	{
 		ScanKey		scan_key = arrayKeys[j].scan_key;
@@ -773,6 +778,8 @@ ExecIndexAdvanceArrayKeys(IndexArrayKeyInfo *arrayKeys, int numArrayKeys)
 		Datum	   *elem_values = arrayKeys[j].elem_values;
 		bool	   *elem_nulls = arrayKeys[j].elem_nulls;
 
+		fprintf(stderr, "updating scan key:\n");
+		/* pprint(scan_key); */
 		if (next_elem >= num_elems)
 		{
 			next_elem = 0;
@@ -918,6 +925,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	Relation	currentRelation;
 	bool		relistarget;
 
+	fprintf(stderr, "In ExecInitIndexScan\n");
 	/*
 	 * create state structure
 	 */
@@ -999,6 +1007,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	/*
 	 * build the index scan keys from the index qualification
 	 */
+	fprintf(stderr, "calling ExecIndexBuildScanKeys\n");
 	ExecIndexBuildScanKeys((PlanState *) indexstate,
 						   indexstate->iss_RelationDesc,
 						   node->indexqual,
@@ -1187,6 +1196,7 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 	n_scan_keys = list_length(quals);
 	scan_keys = (ScanKey) palloc(n_scan_keys * sizeof(ScanKeyData));
 
+	fprintf(stderr, "entering ExecIndexBuildScanKeys\n");
 	/*
 	 * runtime_keys array is dynamically resized as needed.  We handle it this
 	 * way so that the same runtime keys array can be shared between
@@ -1473,6 +1483,7 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 			int			flags = 0;
 			Datum		scanvalue;
 
+			fprintf(stderr, "isorderby: %u\n", isorderby);
 			Assert(!isorderby);
 
 			Assert(saop->useOr);
@@ -1518,12 +1529,14 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 
 			Assert(rightop != NULL);
 
+			fprintf(stderr, "index->rd_amroutine->amsearcharray: %u\n", index->rd_amroutine->amsearcharray);
 			if (index->rd_amroutine->amsearcharray)
 			{
 				/* Index AM will handle this like a simple operator */
 				flags |= SK_SEARCHARRAY;
 				if (IsA(rightop, Const))
 				{
+					fprintf(stderr, "simple constant comparison value\n");
 					/* OK, simple constant comparison value */
 					scanvalue = ((Const *) rightop)->constvalue;
 					if (((Const *) rightop)->constisnull)
@@ -1531,6 +1544,7 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 				}
 				else
 				{
+					fprintf(stderr, "runtime key\n");
 					/* Need to treat this one as a runtime key */
 					if (n_runtime_keys >= max_runtime_keys)
 					{
@@ -1576,6 +1590,7 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 			/*
 			 * initialize the scan key's fields appropriately
 			 */
+			fprintf(stderr, "ScanKeyEntryInitialize:\n");
 			ScanKeyEntryInitialize(this_scan_key,
 								   flags,
 								   varattno,	/* attribute number to scan */
@@ -1584,6 +1599,7 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 								   saop->inputcollid,	/* collation */
 								   opfuncid,	/* reg proc to use */
 								   scanvalue);	/* constant */
+			/* pprint(scanvalue); */
 		}
 		else if (IsA(clause, NullTest))
 		{
@@ -1654,11 +1670,16 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 	 * Return info to our caller.
 	 */
 	*scanKeys = scan_keys;
+	fprintf(stderr, "scan_keys:\n");
+	/* pprint(scan_keys); */
+	/* fprintf(stderr, "done with scan_keys\n"); */
 	*numScanKeys = n_scan_keys;
 	*runtimeKeys = runtime_keys;
 	*numRuntimeKeys = n_runtime_keys;
 	if (arrayKeys)
 	{
+		fprintf(stderr, "ExecIndexBuildScanKeys set array_keys to:\n");
+		pprint(array_keys);
 		*arrayKeys = array_keys;
 		*numArrayKeys = n_array_keys;
 	}

@@ -346,6 +346,7 @@ pathkeys_sublist(List *keys1, List *keys2)
 	PathKey		*match = NULL;
 	int i = 0, j;
 
+	return NIL;
 	printf("pathkeys_sublist_of: %u, %u\n", keys1, keys2);
 	foreach(key2outer, keys2)
 	{
@@ -1714,7 +1715,7 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 		return list_length(root->query_pathkeys);
 	}
 	/* else if (pathkeys_sublist_of(root->query_pathkeys, pathkeys)) */
-	/*	 printf("query pathkeys was sublist of index pathkeys"); */
+	/*	 printf("query pathkeys was sublist of index pathkeys\n"); */
 
 	return 0;					/* path ordering not useful */
 }

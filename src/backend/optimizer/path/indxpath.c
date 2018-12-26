@@ -950,10 +950,10 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 					{
 						/* Caller doesn't want to lose index ordering */
 						*skip_lower_saop = true;
-						printf("setting skip_lower_saop=true for %u", indexcol);
+						printf("setting skip_lower_saop=true for %u\n", indexcol);
 						continue;
 					}
-					printf("found_lower_saop_clause for index col %u", indexcol);
+					printf("found_lower_saop_clause for index col %u\n", indexcol);
 					found_lower_saop_clause = true;
 				}
 			}
