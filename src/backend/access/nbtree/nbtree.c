@@ -207,6 +207,110 @@ btinsert(Relation rel, Datum *values, bool *isnull,
 	return result;
 }
 
+bool
+btarrayelementsremain(BTScanOpaque so)
+{
+	int j;
+	int n = so->arrayKeys[0].num_elems;
+	for (j = 0; j < n; j++)
+	{
+		if (!so->arrayElemScanStarted[j] || BTScanPosIsValid(so->arrayElemCurrPos[j]))
+			return true;
+	}
+	return false;
+}
+
+bool
+btgettuple_rotating_array(IndexScanDesc scan, ScanDirection dir)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	bool		res = false;
+
+	/*
+	 * Round robin through array elements. The first time
+	 * touching each item we'll set a current position.
+	 * Subsequent times we'll try to fetch the next item
+	 * at that position.
+	 * We know we're finished when all element-specific
+	 * current positions are invalid.
+	 */
+	do
+	{
+		BTArrayKeyInfo *curArrayKey = &so->arrayKeys[0];
+		ScanKey		skey = &so->arrayKeyData[curArrayKey->scan_key];
+
+		/*
+		 * First see if we haven't yet initiated a scan for an
+		 * array element.
+		 */
+		int firstUnstartedScan = -1;
+		int j;
+		int n = so->arrayKeys[0].num_elems;
+		for (j = 0; j < n; j++)
+		{
+			if (!so->arrayElemScanStarted[j])
+			{
+				so->arrayElemScanStarted[j] = true;
+				firstUnstartedScan = j;
+				break;
+			}
+		}
+
+		/*
+		 * Initiate the scan for any unscanned array element
+		 * before moving on to continuing the scan for any other
+		 * array element.
+		 */
+		if (firstUnstartedScan >= 0)
+		{
+			curArrayKey->cur_elem = firstUnstartedScan;
+			skey->sk_argument = curArrayKey->elem_values[firstUnstartedScan];
+
+			res = _bt_first(scan, dir);
+		}
+		else
+		{
+			if (curArrayKey->cur_elem == curArrayKey->num_elems - 1)
+				curArrayKey->cur_elem = 0;
+			else
+				curArrayKey->cur_elem++;
+			skey->sk_argument = curArrayKey->elem_values[curArrayKey->cur_elem];
+
+			/* restore curpos */
+			memcpy(&so->currPos, &so->arrayElemCurrPos[curArrayKey->cur_elem], sizeof(BTScanPosData));
+
+			res = _bt_next(scan, dir);
+		}
+
+		/* cache curpos (whether valid or not) */
+		/* TODO: this seems to cause tuple reading to segfault */
+		memcpy(
+				so->arrayElemCurrPos + curArrayKey->cur_elem,
+				&so->currPos,
+				sizeof(BTScanPosData));
+
+		BTScanPosInvalidate(so->currPos);
+
+		if (res)
+			break;
+	} while (btarrayelementsremain(so));
+
+	return res;
+}
+
+bool
+btarrayelementsstarted(BTScanOpaque so)
+{
+	int j;
+	int n = so->arrayKeys[0].num_elems;
+	for (j = 0; j < n; j++)
+	{
+		if (so->arrayElemScanStarted[j])
+			return true;
+	}
+	return false;
+}
+
 /*
  *	btgettuple() -- Get the next tuple in the scan.
  */
@@ -224,7 +328,7 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 	 * scan.  We can't do this in btrescan because we don't know the scan
 	 * direction at that time.
 	 */
-	if (so->numArrayKeys && !BTScanPosIsValid(so->currPos))
+	if (so->numArrayKeys && !BTScanPosIsValid(so->currPos) && !btarrayelementsstarted(so))
 	{
 		/* punt if we have any unsatisfiable array keys */
 		if (so->numArrayKeys < 0)
@@ -232,6 +336,9 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 
 		_bt_start_array_keys(scan, dir);
 	}
+
+	if (so->numArrayKeys == 1) /* && scan->orderWithinArrayKeys) */
+		 return btgettuple_rotating_array(scan, dir);
 
 	/* This loop handles advancing to the next array elements, if any */
 	do
@@ -353,6 +460,8 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 
 	/* get the scan */
 	scan = RelationGetIndexScan(rel, nkeys, norderbys);
+
+	scan->orderWithinArrayKeys = false;
 
 	/* allocate private workspace */
 	so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));

@@ -448,6 +448,9 @@ typedef struct BTScanOpaqueData
 								 * processed */
 	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
 	MemoryContext arrayContext; /* scan-lifespan context for array data */
+	/* List *exhaustedArrayKeys; */
+	BTScanPos arrayElemCurrPos; /* currently one-dimensional, so only works with 1 array key */
+	bool *arrayElemScanStarted; /* currently one-dimensional, so only works with 1 array key */
 
 	/* info about killed items if any (killedItems is NULL if never used) */
 	int		   *killedItems;	/* currPos.items indexes of killed items */

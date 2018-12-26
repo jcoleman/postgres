@@ -97,6 +97,8 @@ typedef struct IndexScanDescData
 	bool		xs_want_itup;	/* caller requests index tuples */
 	bool		xs_temp_snap;	/* unregister snapshot at scan end? */
 
+	bool orderWithinArrayKeys;
+
 	/* signaling to index AM about killing index tuples */
 	bool		kill_prior_tuple;	/* last-returned tuple is dead */
 	bool		ignore_killed_tuples;	/* do not return killed entries */

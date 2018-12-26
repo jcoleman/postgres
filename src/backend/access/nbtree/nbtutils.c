@@ -361,6 +361,20 @@ _bt_preprocess_array_keys(IndexScanDesc scan)
 
 	so->numArrayKeys = numArrayKeys;
 
+	if (numArrayKeys > 0) /* && scan->orderWithinArrayKeys) */
+	{
+		int n = so->arrayKeys[0].num_elems;
+		int j;
+		/* so->exhaustedArrayKeys = NIL; */
+		so->arrayElemCurrPos = (BTScanPos) palloc(n * sizeof(BTScanPosData));
+		so->arrayElemScanStarted = (bool *) palloc(n * sizeof(bool));
+		for (j = 0; j < n; j++)
+		{
+			BTScanPosInvalidate(so->arrayElemCurrPos[j]);
+			so->arrayElemScanStarted[j] = false;
+		}
+	}
+
 	MemoryContextSwitchTo(oldContext);
 }
 
