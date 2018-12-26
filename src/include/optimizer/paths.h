@@ -189,6 +189,7 @@ typedef enum
 } PathKeysComparison;
 
 extern PathKeysComparison compare_pathkeys(List *keys1, List *keys2);
+extern bool pathkeys_sublist_of(List *keys1, List *keys2);
 extern bool pathkeys_contained_in(List *keys1, List *keys2);
 extern Path *get_cheapest_path_for_pathkeys(List *paths, List *pathkeys,
 							   Relids required_outer,
