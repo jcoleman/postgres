@@ -950,10 +950,8 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 					{
 						/* Caller doesn't want to lose index ordering */
 						*skip_lower_saop = true;
-						printf("setting skip_lower_saop=true for %u\n", indexcol);
 						continue;
 					}
-					printf("found_lower_saop_clause for index col %u\n", indexcol);
 					found_lower_saop_clause = true;
 				}
 			}
@@ -993,19 +991,11 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	pathkeys_possibly_useful = (scantype != ST_BITMAPSCAN &&
 								!found_lower_saop_clause &&
 								has_useful_pathkeys(root, rel));
-	printf("found_lower_saop_clause %u\n", found_lower_saop_clause);
-	printf("has_useful_pathkeys(root, rel) %u\n", has_useful_pathkeys(root, rel));
-	printf("pathkeys_possibly_useful %u\n", pathkeys_possibly_useful);
 	index_is_ordered = (index->sortopfamily != NULL);
-	printf("index_is_ordered %u\n", index_is_ordered);
-	printf("index->amcanorderbyop %u\n", index->amcanorderbyop);
 	if (index_is_ordered && pathkeys_possibly_useful)
 	{
-		/* we get into here */
 		index_pathkeys = build_index_pathkeys(root, index,
 											  ForwardScanDirection);
-		/* pathkeys_are_sublist =	*/
-		/* printf("pathkeys_sublist_of: %u\n", pathkeys_sublist_of(root->query_pathkeys, index_pathkeys)); */
 		useful_pathkeys = truncate_useless_pathkeys(root, rel,
 													index_pathkeys,
 													&index_ordered_after_array); /* TODO: only pass if index->amcanorderinarray */
@@ -1047,7 +1037,6 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	if (index_clauses != NIL || useful_pathkeys != NIL || useful_predicate ||
 		index_only_scan)
 	{
-		/* TODO: here's the next spot to investigate */
 		ipath = create_index_path(root, index,
 								  index_clauses,
 								  clause_columns,

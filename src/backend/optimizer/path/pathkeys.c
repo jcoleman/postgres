@@ -363,16 +363,13 @@ pathkeys_sublist(List *keys1, List *keys2)
 			{
 				match = pathkey1;
 				ret = list_make1(pathkey1);
-				printf("found match %u, %u\n", i, j);
 			}
 			else if (match && pathkey1 != pathkey2)
 			{
-				printf("ret false early %u, %u\n", i, j);
 				return false;
 			}
 			else
 			{
-				printf("loop %u, %u\n", i, j);
 				ret = lappend(ret, pathkey1);
 			}
 			j++;
@@ -388,18 +385,14 @@ pathkeys_sublist(List *keys1, List *keys2)
 	{
 		if (key1 != NULL)
 		{
-			printf("sublist key1 is longer\n");
 			return NIL;	/* key1 is longer */
 		}
 		if (key2 != NULL)
 		{
-			printf("sublist key2 is longer\n");
 			return ret;	/* key2 is longer */
 		}
-		printf("sublist match: true\n");
 		return ret;	/* key2 is longer */
 	}
-	printf("sublist base case: false\n");
 	return NIL;
 }
 
@@ -1697,13 +1690,11 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 	printf("\nentering pathkeys_useful_for_ordering\n");
 	if (root->query_pathkeys == NIL)
 	{
-		printf("root->query_pathkeys == NIL\n");
 		return 0;				/* no special ordering requested */
 	}
 
 	if (pathkeys == NIL)
 	{
-		printf("root->query_pathkeys == NIL\n");
 		return 0;				/* unordered path */
 	}
 
@@ -1714,8 +1705,6 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 		/* It's useful ... or at least the first N keys are */
 		return list_length(root->query_pathkeys);
 	}
-	/* else if (pathkeys_sublist_of(root->query_pathkeys, pathkeys)) */
-	/*	 printf("query pathkeys was sublist of index pathkeys\n"); */
 
 	return 0;					/* path ordering not useful */
 }
@@ -1739,9 +1728,7 @@ truncate_useless_pathkeys(PlannerInfo *root,
 	/* pprint(pathkeys); */
 
 	nuseful = pathkeys_useful_for_merging(root, rel, pathkeys);
-	printf("pathkeys_useful_for_merging: %u\n", nuseful);
 	nuseful2 = pathkeys_useful_for_ordering(root, pathkeys);
-	printf("pathkeys_useful_for_ordering: %u\n", nuseful2);
 
 	if (nuseful2 > nuseful)
 		nuseful = nuseful2;

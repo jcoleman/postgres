@@ -87,7 +87,6 @@ IndexNext(IndexScanState *node)
 	HeapTuple	tuple;
 	TupleTableSlot *slot;
 
-	/*fprintf(stderr, "In IndexNext\n");*/
 	/*
 	 * extract necessary information from index scan node
 	 */
@@ -111,7 +110,6 @@ IndexNext(IndexScanState *node)
 		 * We reach here if the index scan is not parallel, or if we're
 		 * serially executing an index scan that was planned to be parallel.
 		 */
-		fprintf(stderr, "In IndexNext: setting up scandesc\n");
 		scandesc = index_beginscan(node->ss.ss_currentRelation,
 								   node->iss_RelationDesc,
 								   estate->es_snapshot,
@@ -927,7 +925,6 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	Relation	currentRelation;
 	bool		relistarget;
 
-	fprintf(stderr, "In ExecInitIndexScan\n");
 	/*
 	 * create state structure
 	 */
@@ -1009,7 +1006,6 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	/*
 	 * build the index scan keys from the index qualification
 	 */
-	fprintf(stderr, "calling ExecIndexBuildScanKeys\n");
 	ExecIndexBuildScanKeys((PlanState *) indexstate,
 						   indexstate->iss_RelationDesc,
 						   node->indexqual,
