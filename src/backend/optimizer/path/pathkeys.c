@@ -339,15 +339,13 @@ pathkeys_contained_in(List *keys1, List *keys2)
 List *
 pathkeys_sublist(List *keys1, List *keys2)
 {
-	ListCell	 *key1,
-				 *key2,
+	ListCell	 *key1 = NULL,
+				 *key2 = NULL,
 				 *key2outer;
-	List			 *ret;
+	List		 *ret = NIL;
 	PathKey		*match = NULL;
 	int i = 0, j;
 
-	return NIL;
-	printf("pathkeys_sublist_of: %u, %u\n", keys1, keys2);
 	foreach(key2outer, keys2)
 	{
 		ListCell *keys1head = list_head(keys1);
@@ -935,7 +933,7 @@ build_join_pathkeys(PlannerInfo *root,
 	 * contain pathkeys that were useful for forming this joinrel but are
 	 * uninteresting to higher levels.
 	 */
-	return truncate_useless_pathkeys(root, joinrel, outer_pathkeys, NULL);
+	return truncate_useless_pathkeys(root, joinrel, outer_pathkeys);
 }
 
 /****************************************************************************
@@ -1686,8 +1684,6 @@ right_merge_direction(PlannerInfo *root, PathKey *pathkey)
 static int
 pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 {
-	bool sublist;
-	printf("\nentering pathkeys_useful_for_ordering\n");
 	if (root->query_pathkeys == NIL)
 	{
 		return 0;				/* no special ordering requested */
@@ -1698,9 +1694,7 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 		return 0;				/* unordered path */
 	}
 
-	/* sublist = pathkeys_sublist_of(root->query_pathkeys, pathkeys); */
-	/* printf("pathkeys_sublist_of returned %u\n", sublist); */
-	if (sublist || pathkeys_contained_in(root->query_pathkeys, pathkeys))
+	if (pathkeys_contained_in(root->query_pathkeys, pathkeys))
 	{
 		/* It's useful ... or at least the first N keys are */
 		return list_length(root->query_pathkeys);
@@ -1716,16 +1710,10 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 List *
 truncate_useless_pathkeys(PlannerInfo *root,
 						  RelOptInfo *rel,
-							List *pathkeys,
-							bool *index_ordered_after_array)
+							List *pathkeys)
 {
 	int			nuseful;
 	int			nuseful2;
-	int		 nusefulorder;
-	int		 nusefulorderinarray = 0;
-
-	printf("\ntruncating useless pathkeys with input:\n");
-	/* pprint(pathkeys); */
 
 	nuseful = pathkeys_useful_for_merging(root, rel, pathkeys);
 	nuseful2 = pathkeys_useful_for_ordering(root, pathkeys);
@@ -1739,17 +1727,6 @@ truncate_useless_pathkeys(PlannerInfo *root,
 	 */
 	if (nuseful == 0)
 	{
-		if (index_ordered_after_array != NIL)
-		{
-			/* TODO: this isn't technically accurate because we can only
-			 * use the subset approach in certain situations (e.g., when the
-			 * first op is a ScalarArrayOpExpr. */
-			List *ret = pathkeys_sublist(root->query_pathkeys, pathkeys);
-			printf("returning pathkeys_sublist: \n");
-			pprint(ret);
-			*index_ordered_after_array = true;
-			return ret;
-		}
 		return NIL;
 	}
 	else if (nuseful == list_length(pathkeys))

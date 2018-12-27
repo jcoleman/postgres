@@ -227,6 +227,15 @@ btgettuple_rotating_array(IndexScanDesc scan, ScanDirection dir)
 	bool		res = false;
 
 	/*
+	 * TODO:
+	 * 1. Build linked list with struct of (index tuple, curpos)
+	 *    ordered by index tuple (without prefix!).
+	 * 2. Using that linked list as a work queue, continue fetching
+	 *    tuples from the curpos page until a.) none left, or
+	 *    b.) the next item in the list has a lower index tuple.
+	 */
+
+	/*
 	 * Round robin through array elements. The first time
 	 * touching each item we'll set a current position.
 	 * Subsequent times we'll try to fetch the next item
@@ -337,7 +346,8 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 		_bt_start_array_keys(scan, dir);
 	}
 
-	if (so->numArrayKeys == 1) /* && scan->orderWithinArrayKeys) */
+	/* TODO: making this not just 1 array key */
+	if (so->numArrayKeys == 1 && scan->orderWithinArrayKeys)
 		 return btgettuple_rotating_array(scan, dir);
 
 	/* This loop handles advancing to the next array elements, if any */

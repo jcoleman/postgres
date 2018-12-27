@@ -742,6 +742,8 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	bool		skip_lower_saop = false;
 	ListCell   *lc;
 
+	/* TODO: Ensure we handle saop quals/ordering properly here. */
+
 	/*
 	 * Build simple index paths using the clauses.  Allow ScalarArrayOpExpr
 	 * clauses only if the index AM supports them natively, and skip any such
@@ -870,14 +872,13 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	double		loop_count;
 	List	   *orderbyclauses;
 	List	   *orderbyclausecols;
-	List	   *index_pathkeys;
+	List	   *index_pathkeys = NIL;
 	List	   *useful_pathkeys;
+	List	   *useful_pathkeys_after_saop = NIL;
 	bool		found_lower_saop_clause;
 	bool		pathkeys_possibly_useful;
-	bool		pathkeys_are_sublist;
 	bool		index_is_ordered;
 	bool		index_only_scan;
-	bool		index_ordered_after_array;
 	int			indexcol;
 
 	/*
@@ -997,8 +998,13 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 		index_pathkeys = build_index_pathkeys(root, index,
 											  ForwardScanDirection);
 		useful_pathkeys = truncate_useless_pathkeys(root, rel,
-													index_pathkeys,
-													&index_ordered_after_array); /* TODO: only pass if index->amcanorderinarray */
+													index_pathkeys);
+		/* TODO: only do if index->amcanorderinarray */
+		/* TODO: this isn't technically accurate because we can only
+		 * use the subset approach in certain situations (e.g., when the
+		 * first op is a ScalarArrayOpExpr. */
+		if (useful_pathkeys == NIL)
+			useful_pathkeys_after_saop = pathkeys_sublist(root->query_pathkeys, index_pathkeys);
 		orderbyclauses = NIL;
 		orderbyclausecols = NIL;
 	}
@@ -1042,6 +1048,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 								  clause_columns,
 								  orderbyclauses,
 								  orderbyclausecols,
+								  NIL,
 								  useful_pathkeys,
 								  index_is_ordered ?
 								  ForwardScanDirection :
@@ -1051,6 +1058,25 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 								  loop_count,
 								  false);
 		result = lappend(result, ipath);
+
+		if (useful_pathkeys == NIL && useful_pathkeys_after_saop != NIL)
+		{
+			ipath = create_index_path(root, index,
+									  index_clauses,
+									  clause_columns,
+									  orderbyclauses,
+									  orderbyclausecols,
+									  useful_pathkeys_after_saop,
+									  useful_pathkeys_after_saop, /* TODO: if this is just index_pathkeys then we still get an explicit sort node; probably needs to be truncated also (if index has _more_ sorting than necessary)? */
+									  index_is_ordered ?
+									  ForwardScanDirection :
+									  NoMovementScanDirection,
+									  index_only_scan,
+									  outer_relids,
+									  loop_count,
+									  false);
+			result = lappend(result, ipath);
+		}
 
 		/*
 		 * If appropriate, consider parallel index scan.  We don't allow
@@ -1065,6 +1091,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 									  clause_columns,
 									  orderbyclauses,
 									  orderbyclausecols,
+									  NIL,
 									  useful_pathkeys,
 									  index_is_ordered ?
 									  ForwardScanDirection :
@@ -1093,7 +1120,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 		index_pathkeys = build_index_pathkeys(root, index,
 											  BackwardScanDirection);
 		useful_pathkeys = truncate_useless_pathkeys(root, rel,
-													index_pathkeys, NULL);
+													index_pathkeys);
 		if (useful_pathkeys != NIL)
 		{
 			ipath = create_index_path(root, index,
@@ -1101,6 +1128,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 									  clause_columns,
 									  NIL,
 									  NIL,
+									  NIL, /* TODO: consider backwards variant */
 									  useful_pathkeys,
 									  BackwardScanDirection,
 									  index_only_scan,
@@ -1117,6 +1145,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 				ipath = create_index_path(root, index,
 										  index_clauses,
 										  clause_columns,
+										  NIL,
 										  NIL,
 										  NIL,
 										  useful_pathkeys,

@@ -106,6 +106,8 @@ IndexNext(IndexScanState *node)
 
 	if (scandesc == NULL)
 	{
+		IndexScan *scan = (IndexScan *) node->ss.ps.plan;
+
 		/*
 		 * We reach here if the index scan is not parallel, or if we're
 		 * serially executing an index scan that was planned to be parallel.
@@ -118,7 +120,7 @@ IndexNext(IndexScanState *node)
 
 		node->iss_ScanDesc = scandesc;
 
-		/* scandesc->orderWithinArrayKeys = node->ss.ps.plan->orderWithinArrayKeys; */
+		scandesc->orderWithinArrayKeys = scan->pathkeys_after_saop != NIL;
 
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and

@@ -403,8 +403,8 @@ typedef struct IndexScan
 	List	   *indexorderby;	/* list of index ORDER BY exprs */
 	List	   *indexorderbyorig;	/* the same in original form */
 	List	   *indexorderbyops;	/* OIDs of sort ops for ORDER BY exprs */
+	List	   *pathkeys_after_saop;	/* TODO */
 	ScanDirection indexorderdir;	/* forward or backward or don't care */
-	bool orderWithinArrayKeys;
 } IndexScan;
 
 /* ----------------

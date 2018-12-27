@@ -1171,6 +1171,7 @@ typedef struct IndexPath
 	List	   *indexqualcols;
 	List	   *indexorderbys;
 	List	   *indexorderbycols;
+	List	   *pathkeys_after_saop;
 	ScanDirection indexscandir;
 	Cost		indextotalcost;
 	Selectivity indexselectivity;

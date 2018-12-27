@@ -1028,6 +1028,7 @@ create_index_path(PlannerInfo *root,
 					/* Only set when amcanorderbyop */
 				  List *indexorderbys,
 				  List *indexorderbycols,
+				  List *pathkeys_after_saop,
 				  List *pathkeys,
 				  ScanDirection indexscandir,
 				  bool indexonly,
@@ -1061,8 +1062,10 @@ create_index_path(PlannerInfo *root,
 	pathnode->indexqualcols = indexqualcols;
 	pathnode->indexorderbys = indexorderbys;
 	pathnode->indexorderbycols = indexorderbycols;
+	pathnode->pathkeys_after_saop = pathkeys_after_saop;
 	pathnode->indexscandir = indexscandir;
 
+	/* TODO: update costing */
 	cost_index(pathnode, root, loop_count, partial_path);
 
 	return pathnode;
