@@ -480,6 +480,14 @@ typedef struct BTScanOpaqueData
 
 typedef BTScanOpaqueData *BTScanOpaque;
 
+typedef struct BTRoundRobinScanPosData
+{
+	BTScanPos currPos; /* currently one-dimensional, so only works with 1 array key */
+	IndexTuple itup;
+} BTRoundRobinScanPosData;
+
+typedef BTRoundRobinScanPosData *BTRoundRobinScanPos;
+
 /*
  * We use some private sk_flags bits in preprocessed scan keys.  We're allowed
  * to use bits 16-31 (see skey.h).  The uppermost bits are copied from the
