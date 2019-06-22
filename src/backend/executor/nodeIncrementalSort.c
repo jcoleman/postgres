@@ -123,13 +123,12 @@ preparePresortedCols(IncrementalSortState *node)
  *
  */
 static bool
-isCurrentGroup(IncrementalSortState *node, TupleTableSlot *tupleSlot)
+isCurrentGroup(IncrementalSortState *node, TupleTableSlot *pivotTupleSlot, TupleTableSlot *tupleSlot)
 {
 	int presortedCols, i;
-	TupleTableSlot *group_pivot = node->group_pivot;
 
-	if (TupIsNull(node->group_pivot))
-		return true;
+	/* if (TupIsNull(node->group_pivot)) */
+	/* 	return true; */
 
 	Assert(IsA(node->ss.ps.plan, IncrementalSort));
 
@@ -150,7 +149,7 @@ isCurrentGroup(IncrementalSortState *node, TupleTableSlot *tupleSlot)
 		AttrNumber			attno = node->presorted_keys[i].attno;
 		PresortedKeyData   *key;
 
-		datumA = slot_getattr(group_pivot, attno, &isnullA);
+		datumA = slot_getattr(pivotTupleSlot, attno, &isnullA);
 		datumB = slot_getattr(tupleSlot, attno, &isnullB);
 
 		/* Special case for NULL-vs-NULL, else use standard comparison */
@@ -207,7 +206,7 @@ ExecIncrementalSort(PlanState *pstate)
 	EState			   *estate;
 	ScanDirection		dir;
 	Tuplesortstate	   *tuplesortstate;
-	TupleTableSlot	   *slot;
+	TupleTableSlot	   *slot = NULL;
 	IncrementalSort	   *plannode = (IncrementalSort *) node->ss.ps.plan;
 	PlanState		   *outerNode;
 	TupleDesc			tupDesc;
@@ -296,6 +295,7 @@ ExecIncrementalSort(PlanState *pstate)
 	else
 	{
 		/* Next group of presorted data */
+		/* TODO: don't reset if already reset */
 		tuplesort_reset((Tuplesortstate *) node->tuplesortstate);
 	}
 	node->group_count++;
@@ -303,7 +303,6 @@ ExecIncrementalSort(PlanState *pstate)
 	/* After the first group we will already have fetched a tuple
 	 * (since we needed one to see if we'd completed the group).
 	 */
-	slot = NULL;
 	if (!TupIsNull(node->group_pivot))
 		slot = node->group_pivot;
 
@@ -318,6 +317,14 @@ ExecIncrementalSort(PlanState *pstate)
 
 		if (TupIsNull(slot))
 		{
+			if (!TupIsNull(node->group_pivot))
+			{
+				/*
+				 * If there are no more tuples, we know the previous
+				 * slot is implicitly part of the current group.
+				 */
+				tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
+			}
 			node->finished = true;
 			break;
 		}
@@ -347,24 +354,40 @@ ExecIncrementalSort(PlanState *pstate)
 		 * need to keep the last tuple, so we copy it into the pivot slot
 		 * (it does not serve as pivot, though).
 		 */
-		if (isCurrentGroup(node, slot))
+
+		/*
+		 * TODO: is there a way to pull the last tuple back out of the
+		 * tuplesort so that we don't have to copy slots around for
+		 * small groups?
+		 */
+
+		if (nTuples == 0)
 		{
-			if (TupIsNull(node->group_pivot))
-				ExecCopySlot(node->group_pivot, slot);
-			tuplesort_puttupleslot(tuplesortstate, slot);
-			nTuples++;
+			ExecCopySlot(node->group_pivot, slot);
 			slot = NULL;
+			nTuples++;
 		}
 		else
 		{
-			ExecCopySlot(node->group_pivot, slot);
-			break;
+			tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
+			if (isCurrentGroup(node, node->group_pivot, slot))
+			{
+				ExecCopySlot(node->group_pivot, slot);
+				slot = NULL;
+				nTuples++;
+			}
+			else
+			{
+				ExecCopySlot(node->group_pivot, slot);
+				break;
+			}
 		}
 	}
 
 	/*
 	 * Complete the sort.
 	 */
+	/* TODO: if (nTuples > 1) */
 	tuplesort_performsort(tuplesortstate);
 
 	/*
@@ -384,6 +407,7 @@ ExecIncrementalSort(PlanState *pstate)
 		Assert(IsParallelWorker());
 		Assert(ParallelWorkerNumber <= node->shared_info->num_workers);
 		si = &node->shared_info->sinfo[ParallelWorkerNumber].sinstrument;
+		/* TODO: ? when only 1 tuple */
 		tuplesort_get_stats(tuplesortstate, si);
 		node->shared_info->sinfo[ParallelWorkerNumber].group_count =
 															node->group_count;
