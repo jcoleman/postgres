@@ -128,6 +128,9 @@ isCurrentGroup(IncrementalSortState *node, TupleTableSlot *tupleSlot)
 	int presortedCols, i;
 	TupleTableSlot *group_pivot = node->group_pivot;
 
+	if (TupIsNull(node->group_pivot))
+		return true;
+
 	Assert(IsA(node->ss.ps.plan, IncrementalSort));
 
 	presortedCols = ((IncrementalSort *) node->ss.ps.plan)->presortedCols;
@@ -179,15 +182,6 @@ isCurrentGroup(IncrementalSortState *node, TupleTableSlot *tupleSlot)
 	return true;
 }
 
-/*
- * Sorting many small groups with tuplesort is inefficient. In order to
- * cope with this problem we don't start a new group until the current one
- * contains at least DEFAULT_MIN_GROUP_SIZE tuples.  However, in the case
- * of bounded sort where bound is less than DEFAULT_MIN_GROUP_SIZE we start
- * looking for the new group when bound is done.
- */
-#define DEFAULT_MIN_GROUP_SIZE 32
-
 /* ----------------------------------------------------------------
  *		ExecIncrementalSort
  *
@@ -218,7 +212,6 @@ ExecIncrementalSort(PlanState *pstate)
 	PlanState		   *outerNode;
 	TupleDesc			tupDesc;
 	int64				nTuples = 0;
-	int64				minGroupSize;
 
 	CHECK_FOR_INTERRUPTS();
 
@@ -284,6 +277,7 @@ ExecIncrementalSort(PlanState *pstate)
 		 * Pass all the columns to tuplesort.  We pass to tuple sort groups
 		 * of at least minGroupSize size.  Thus, these groups doesn't
 		 * necessary have equal value of the first column.
+		 * TODO
 		 */
 		tuplesortstate = tuplesort_begin_heap(
 									tupDesc,
@@ -304,27 +298,12 @@ ExecIncrementalSort(PlanState *pstate)
 	}
 	node->group_count++;
 
-	/*
-	 * Calculate remaining bound for bounded sort and minimal group size
-	 * accordingly.
+	/* After the first group we will already have fetched a tuple
+	 * (since we needed one to see if we'd completed the group).
 	 */
-	if (node->bounded)
-	{
-		tuplesort_set_bound(tuplesortstate, node->bound - node->bound_Done);
-		minGroupSize = Min(DEFAULT_MIN_GROUP_SIZE, node->bound - node->bound_Done);
-	}
-	else
-	{
-		minGroupSize = DEFAULT_MIN_GROUP_SIZE;
-	}
-
-	/* If we got a leftover tuple from the last group, pass it to tuplesort. */
+	slot = NULL;
 	if (!TupIsNull(node->group_pivot))
-	{
-		tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
-		ExecClearTuple(node->group_pivot);
-		nTuples++;
-	}
+		slot = node->group_pivot;
 
 	/*
 	 * Put next group of tuples where presortedCols sort values are equal to
@@ -332,7 +311,8 @@ ExecIncrementalSort(PlanState *pstate)
 	 */
 	for (;;)
 	{
-		slot = ExecProcNode(outerNode);
+		if (slot == NULL)
+			slot = ExecProcNode(outerNode);
 
 		if (TupIsNull(slot))
 		{
@@ -348,44 +328,35 @@ ExecIncrementalSort(PlanState *pstate)
 		 * The last tuple is kept as a pivot, so that we can determine if
 		 * the subsequent tuples have the same prefix key (same group).
 		 */
-		if (nTuples < minGroupSize)
+		/*
+		 * Iterate while presorted cols are the same as in the pivot
+		 * tuple.
+		 *
+		 * After accumulating at least minGroupSize tuples (we don't
+		 * know how many groups are there in that set), we need to keep
+		 * accumulating until we reach the end of the group. Only then
+		 * we can do the sort and output all the tuples.
+		 *
+		 * We compare the prefix keys to the pivot - if the prefix keys
+		 * are the same the tuple belongs to the same group, so we pass
+		 * it to the tuplesort.
+		 *
+		 * If the prefix differs, we've reached the end of the group. We
+		 * need to keep the last tuple, so we copy it into the pivot slot
+		 * (it does not serve as pivot, though).
+		 */
+		if (isCurrentGroup(node, slot))
 		{
-			tuplesort_puttupleslot(tuplesortstate, slot);
-
-			/* Keep the last tuple in minimal group as a pivot. */
-			if (nTuples == minGroupSize - 1)
+			if (TupIsNull(node->group_pivot))
 				ExecCopySlot(node->group_pivot, slot);
+			tuplesort_puttupleslot(tuplesortstate, slot);
 			nTuples++;
+			slot = NULL;
 		}
 		else
 		{
-			/*
-			 * Iterate while presorted cols are the same as in the pivot
-			 * tuple.
-			 *
-			 * After accumulating at least minGroupSize tuples (we don't
-			 * know how many groups are there in that set), we need to keep
-			 * accumulating until we reach the end of the group. Only then
-			 * we can do the sort and output all the tuples.
-			 *
-			 * We compare the prefix keys to the pivot - if the prefix keys
-			 * are the same the tuple belongs to the same group, so we pass
-			 * it to the tuplesort.
-			 *
-			 * If the prefix differs, we've reached the end of the group. We
-			 * need to keep the last tuple, so we copy it into the pivot slot
-			 * (it does not serve as pivot, though).
-			 */
-			if (isCurrentGroup(node, slot))
-			{
-				tuplesort_puttupleslot(tuplesortstate, slot);
-				nTuples++;
-			}
-			else
-			{
-				ExecCopySlot(node->group_pivot, slot);
-				break;
-			}
+			ExecCopySlot(node->group_pivot, slot);
+			break;
 		}
 	}
 
