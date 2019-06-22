@@ -2654,8 +2654,7 @@ static void
 show_incremental_sort_info(IncrementalSortState *incrsortstate,
 						   ExplainState *es)
 {
-	if (es->analyze && incrsortstate->sort_Done &&
-		incrsortstate->tuplesortstate != NULL)
+	if (es->analyze && incrsortstate->tuplesortstate != NULL)
 	{
 		Tuplesortstate *state = (Tuplesortstate *) incrsortstate->tuplesortstate;
 		TuplesortInstrumentation stats;
@@ -2670,20 +2669,31 @@ show_incremental_sort_info(IncrementalSortState *incrsortstate,
 
 		if (es->format == EXPLAIN_FORMAT_TEXT)
 		{
+			if (incrsortstate->sort_Done)
+			{
+				appendStringInfoSpaces(es->str, es->indent * 2);
+				appendStringInfo(es->str, "Sort Method: %s  %s: %ldkB\n",
+								 sortMethod, spaceType, spaceUsed);
+				appendStringInfoSpaces(es->str, es->indent * 2);
+				appendStringInfo(es->str, "Sort Groups: %ld\n",
+								 incrsortstate->group_count);
+			}
 			appendStringInfoSpaces(es->str, es->indent * 2);
-			appendStringInfo(es->str, "Sort Method: %s  %s: %ldkB\n",
-							 sortMethod, spaceType, spaceUsed);
-			appendStringInfoSpaces(es->str, es->indent * 2);
-			appendStringInfo(es->str, "Sort Groups: %ld\n",
-							 incrsortstate->group_count);
+			appendStringInfo(es->str, "Single Row Groups: %ld\n",
+							 incrsortstate->single_tuple_group_count);
 		}
 		else
 		{
-			ExplainPropertyText("Sort Method", sortMethod, es);
-			ExplainPropertyInteger("Sort Space Used", "kB", spaceUsed, es);
-			ExplainPropertyText("Sort Space Type", spaceType, es);
-			ExplainPropertyInteger("Sort Groups:", NULL,
-								   incrsortstate->group_count, es);
+			if (incrsortstate->sort_Done)
+			{
+				ExplainPropertyText("Sort Method", sortMethod, es);
+				ExplainPropertyInteger("Sort Space Used", "kB", spaceUsed, es);
+				ExplainPropertyText("Sort Space Type", spaceType, es);
+				ExplainPropertyInteger("Sort Groups", NULL,
+									   incrsortstate->group_count, es);
+			}
+			ExplainPropertyInteger("Single Row Groups", NULL,
+								   incrsortstate->single_tuple_group_count, es);
 		}
 	}
 
@@ -2699,9 +2709,12 @@ show_incremental_sort_info(IncrementalSortState *incrsortstate,
 			const char *spaceType;
 			long		spaceUsed;
 			int64		group_count;
+			int64		single_tuple_group_count;
 
 			sinstrument = &incrsortstate->shared_info->sinfo[n].sinstrument;
 			group_count = incrsortstate->shared_info->sinfo[n].group_count;
+			single_tuple_group_count = incrsortstate->shared_info->sinfo[n].single_tuple_group_count;
+			/* TODO: how should we handle workers that didn't need to sort at all */
 			if (sinstrument->sortMethod == SORT_TYPE_STILL_IN_PROGRESS)
 				continue;		/* ignore any unfilled slots */
 			sortMethod = tuplesort_method_name(sinstrument->sortMethod);
@@ -2712,8 +2725,8 @@ show_incremental_sort_info(IncrementalSortState *incrsortstate,
 			{
 				appendStringInfoSpaces(es->str, es->indent * 2);
 				appendStringInfo(es->str,
-								 "Worker %d:  Sort Method: %s  %s: %ldkB  Groups: %ld\n",
-								 n, sortMethod, spaceType, spaceUsed, group_count);
+								 "Worker %d:  Sort Method: %s  %s: %ldkB  Groups: %ld  Single Row Groups: %ld\n",
+								 n, sortMethod, spaceType, spaceUsed, group_count, single_tuple_group_count);
 			}
 			else
 			{
@@ -2728,6 +2741,7 @@ show_incremental_sort_info(IncrementalSortState *incrsortstate,
 				ExplainPropertyInteger("Sort Space Used", "kB", spaceUsed, es);
 				ExplainPropertyText("Sort Space Type", spaceType, es);
 				ExplainPropertyInteger("Sort Groups", NULL, group_count, es);
+				ExplainPropertyInteger("Single Row Groups", NULL, single_tuple_group_count, es);
 				ExplainCloseGroup("Worker", NULL, true, es);
 			}
 		}

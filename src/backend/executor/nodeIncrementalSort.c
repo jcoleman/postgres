@@ -323,7 +323,8 @@ ExecIncrementalSort(PlanState *pstate)
 				 * If there are no more tuples, we know the previous
 				 * slot is implicitly part of the current group.
 				 */
-				tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
+				if (nTuples > 0)
+					tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
 			}
 			node->finished = true;
 			break;
@@ -369,9 +370,10 @@ ExecIncrementalSort(PlanState *pstate)
 		}
 		else
 		{
-			tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
 			if (isCurrentGroup(node, node->group_pivot, slot))
 			{
+				tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
+				tuplesort_puttupleslot(tuplesortstate, slot);
 				ExecCopySlot(node->group_pivot, slot);
 				slot = NULL;
 				nTuples++;
@@ -387,8 +389,8 @@ ExecIncrementalSort(PlanState *pstate)
 	/*
 	 * Complete the sort.
 	 */
-	/* TODO: if (nTuples > 1) */
-	tuplesort_performsort(tuplesortstate);
+	if (nTuples > 1)
+		tuplesort_performsort(tuplesortstate);
 
 	/*
 	 * restore to user specified direction
@@ -398,7 +400,8 @@ ExecIncrementalSort(PlanState *pstate)
 	/*
 	 * finally set the sorted flag to true
 	 */
-	node->sort_Done = true;
+	if (nTuples > 1)
+		node->sort_Done = true;
 	node->bounded_Done = node->bounded;
 	if (node->shared_info && node->am_worker)
 	{
@@ -411,6 +414,8 @@ ExecIncrementalSort(PlanState *pstate)
 		tuplesort_get_stats(tuplesortstate, si);
 		node->shared_info->sinfo[ParallelWorkerNumber].group_count =
 															node->group_count;
+		node->shared_info->sinfo[ParallelWorkerNumber].single_tuple_group_count =
+															node->single_tuple_group_count;
 	}
 
 	/*
@@ -433,10 +438,22 @@ ExecIncrementalSort(PlanState *pstate)
 	 * Get the first or next tuple from tuplesort. Returns NULL if no more
 	 * tuples.
 	 */
+	/* TODO: can we reuse node->ss.ps.ps_ResultTupleSlot to avoid unnecessary copies */
 	slot = node->ss.ps.ps_ResultTupleSlot;
-	(void) tuplesort_gettupleslot(tuplesortstate,
-								  ScanDirectionIsForward(dir),
-								  false, slot, NULL);
+	if (nTuples == 0)
+		slot = NULL;
+	else if (nTuples == 1)
+	{
+		/* TODO: can we do this without a copy? */
+		ExecCopySlot(slot, node->group_pivot);
+		node->single_tuple_group_count++;
+	}
+	else
+		/* TODO: is it safe to use copy=false here? */
+		(void) tuplesort_gettupleslot(tuplesortstate,
+									ScanDirectionIsForward(dir),
+									false, slot, NULL);
+
 	return slot;
 }
 
@@ -479,6 +496,7 @@ ExecInitIncrementalSort(IncrementalSort *node, EState *estate, int eflags)
 	incrsortstate->group_pivot = NULL;
 	incrsortstate->bound_Done = 0;
 	incrsortstate->group_count = 0;
+	incrsortstate->single_tuple_group_count = 0;
 	incrsortstate->presorted_keys = NULL;
 
 	/*

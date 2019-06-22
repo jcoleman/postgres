@@ -1972,6 +1972,7 @@ typedef struct IncrementalSortInfo
 {
 	TuplesortInstrumentation	sinstrument;
 	int64						group_count;
+	int64		single_tuple_group_count;
 } IncrementalSortInfo;
 
 typedef struct SharedIncrementalSortInfo
@@ -1997,7 +1998,8 @@ typedef struct IncrementalSortState
 	void	   *tuplesortstate; /* private state of tuplesort.c */
 	/* the keys by which the input path is already sorted */
 	PresortedKeyData *presorted_keys;
-	int64		group_count;	/* number of groups with equal presorted keys */
+	int64		group_count;	/* number of groups of equal presorted keys */
+	int64		single_tuple_group_count;	/* number of groups with only one tuple */
 	/* slot for pivot tuple defining values of presorted keys within group */
 	TupleTableSlot *group_pivot;
 	bool		am_worker;		/* are we a worker? */
