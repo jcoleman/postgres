@@ -263,6 +263,8 @@ ExecIncrementalSort(PlanState *pstate)
 	 */
 	if (node->tuplesortstate == NULL)
 	{
+		int presortedCols = plannode->presortedCols;
+
 		/*
 		 * We are going to process the first group of presorted data.
 		 * Initialize support structures for cmpSortPresortedCols - already
@@ -280,15 +282,15 @@ ExecIncrementalSort(PlanState *pstate)
 		 * TODO
 		 */
 		tuplesortstate = tuplesort_begin_heap(
-									tupDesc,
-									plannode->sort.numCols,
-									plannode->sort.sortColIdx,
-									plannode->sort.sortOperators,
-									plannode->sort.collations,
-									plannode->sort.nullsFirst,
-									work_mem,
-									NULL,
-									false);
+							tupDesc,
+							plannode->sort.numCols - presortedCols,
+							&(plannode->sort.sortColIdx[presortedCols]),
+							&(plannode->sort.sortOperators[presortedCols]),
+							&(plannode->sort.collations[presortedCols]),
+							&(plannode->sort.nullsFirst[presortedCols]),
+							work_mem,
+							NULL,
+							false);
 		node->tuplesortstate = (void *) tuplesortstate;
 	}
 	else
