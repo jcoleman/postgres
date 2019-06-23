@@ -372,9 +372,9 @@ ExecIncrementalSort(PlanState *pstate)
 		{
 			if (isCurrentGroup(node, node->group_pivot, slot))
 			{
-				tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
+				if (nTuples == 1)
+					tuplesort_puttupleslot(tuplesortstate, node->group_pivot);
 				tuplesort_puttupleslot(tuplesortstate, slot);
-				ExecCopySlot(node->group_pivot, slot);
 				slot = NULL;
 				nTuples++;
 			}
