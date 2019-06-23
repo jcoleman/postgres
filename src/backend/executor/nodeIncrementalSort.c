@@ -290,6 +290,8 @@ ExecIncrementalSort(PlanState *pstate)
 							work_mem,
 							NULL,
 							false);
+		if (node->bounded)
+			tuplesort_set_bound(tuplesortstate, node->bound);
 		node->tuplesortstate = (void *) tuplesortstate;
 	}
 	else
