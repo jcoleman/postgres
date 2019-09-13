@@ -48,14 +48,19 @@ PostgreSQL documentation
   </para>
 
   <para>
-   The result is equivalent to replacing the target data directory with the
-   source one. Only changed blocks from relation files are copied;
-   all other files are copied in full, including configuration files. The
-   advantage of <application>pg_rewind</application> over taking a new base backup, or
-   tools like <application>rsync</application>, is that <application>pg_rewind</application> does
-   not require reading through unchanged blocks in the cluster. This makes
-   it a lot faster when the database is large and only a small
-   fraction of blocks differ between the clusters.
+   After a successful rewind, the target data directory is equivalent to the
+   to the state of the data directory at the last checkpoint completed prior to
+   the point at which the WAL timelines of the source and target diverged plus
+   the current state on the source of any blocks changed on the target after
+   that divergence. While only changed blocks from existing relation files are
+   copied; all other files are copied in full, including new relation files,
+   configuration files and WAL segments. The advantage of
+   <application>pg_rewind</application> over taking a new base backup, or tools
+   like <application>rsync</application>, is that
+   <application>pg_rewind</application> does not require comparing or copying
+   unchanged relation blocks in the cluster. As such the rewind operation is
+   significantly faster than other approaches when the database is large and
+   only a small fraction of blocks differ between the clusters.
   </para>
 
   <para>
@@ -115,6 +120,23 @@ PostgreSQL documentation
     those files may have been copied from the source, in which case it may
     be necessary to remove the data copied and restore back the set of links
     used before the rewind.
+   </para>
+
+   <para>
+    The rewind operation is not expected to result in a consistent data
+    directory state either internally to the node or with respect to the rest
+    of the cluster. Instead the resulting data directory will only be consistent
+    after WAL replay has completed to at least the LSN at which changed blocks
+    copied from the source were originally written on the source.
+   </para>
+   
+  <para>
+    Because <application>pg_rewind</application> copies configuration files
+    entirely from the source, correcting recovery configuration options before
+    restarting the server is necessary if you intend to re-introduce the target
+    as a replica of the source. If you restart the server after the rewind
+    operation has finished but without configuring recovery, the target will
+    again diverge from the primary.
    </para>
   </warning>
  </refsect1>
