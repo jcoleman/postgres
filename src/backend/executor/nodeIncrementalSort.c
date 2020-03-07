@@ -355,7 +355,7 @@ switchToPresortedPrefixMode(IncrementalSortState *node)
 		 */
 		SO1_printf("Sorting presorted prefix tuplesort with %ld tuples\n", nTuples);
 		tuplesort_performsort(node->prefixsort_state);
-		node->prefixsort_group_count++;
+		node->incsort_info.prefixsortGroupInfo.groupCount++;
 
 		if (node->bounded)
 		{
@@ -602,7 +602,7 @@ ExecIncrementalSort(PlanState *pstate)
 
 				SO1_printf("Sorting fullsort with %ld tuples\n", nTuples);
 				tuplesort_performsort(fullsort_state);
-				node->fullsort_group_count++;
+				node->incsort_info.fullsortGroupInfo.groupCount++;
 
 				SO_printf("Setting execution_status to INCSORT_READFULLSORT (final tuple) \n");
 				node->execution_status = INCSORT_READFULLSORT;
@@ -673,7 +673,7 @@ ExecIncrementalSort(PlanState *pstate)
 					 */
 					SO1_printf("Sorting fullsort tuplesort with %ld tuples\n", nTuples);
 					tuplesort_performsort(fullsort_state);
-					node->fullsort_group_count++;
+					node->incsort_info.fullsortGroupInfo.groupCount++;
 					SO_printf("Setting execution_status to INCSORT_READFULLSORT (found end of group)\n");
 					node->execution_status = INCSORT_READFULLSORT;
 					break;
@@ -705,7 +705,7 @@ ExecIncrementalSort(PlanState *pstate)
 				 */
 				SO1_printf("Sorting fullsort tuplesort with %ld tuples\n", nTuples);
 				tuplesort_performsort(fullsort_state);
-				node->fullsort_group_count++;
+				node->incsort_info.fullsortGroupInfo.groupCount++;
 
 				/*
 				 * If the full sort tuplesort happened to switch into top-n heapsort mode
@@ -801,7 +801,7 @@ ExecIncrementalSort(PlanState *pstate)
 		/* Perform the sort and return the tuples to the inner plan nodes. */
 		SO1_printf("Sorting presorted prefix tuplesort with >= %ld tuples\n", nTuples);
 		tuplesort_performsort(node->prefixsort_state);
-		node->prefixsort_group_count++;
+		node->incsort_info.prefixsortGroupInfo.groupCount++;
 		SO_printf("Setting execution_status to INCSORT_READPREFIXSORT (found end of group)\n");
 		node->execution_status = INCSORT_READPREFIXSORT;
 
@@ -828,23 +828,67 @@ ExecIncrementalSort(PlanState *pstate)
 	 */
 	node->sort_Done = true;
 
-	/* Record shared stats if we're a parallel worker. */
-	if (node->shared_info && node->am_worker)
+	/* TODO: break this out into function? */
+	if (pstate->instrument != NULL)
 	{
-		IncrementalSortInfo *incsort_info =
-			&node->shared_info->sinfo[ParallelWorkerNumber];
+		IncrementalSortGroupInfo *groupInfo;
+		TuplesortInstrumentation	sort_instr;
 
-		Assert(IsParallelWorker());
-		Assert(ParallelWorkerNumber <= node->shared_info->num_workers);
+		groupInfo = &node->incsort_info.fullsortGroupInfo;
+		tuplesort_get_stats(fullsort_state, &sort_instr);
+		switch (sort_instr.spaceType)
+		{
+			case SORT_SPACE_TYPE_DISK:
+				groupInfo->totalDiskSpaceUsed += sort_instr.spaceUsed;
+				if (sort_instr.spaceUsed > groupInfo->maxDiskSpaceUsed)
+					groupInfo->maxDiskSpaceUsed = sort_instr.spaceUsed;
 
-		tuplesort_get_stats(fullsort_state, &incsort_info->fullsort_instrument);
-		incsort_info->fullsort_group_count = node->fullsort_group_count;
+				break;
+			case SORT_SPACE_TYPE_MEMORY:
+				groupInfo->totalMemorySpaceUsed += sort_instr.spaceUsed;
+				if (sort_instr.spaceUsed > groupInfo->maxMemorySpaceUsed)
+					groupInfo->maxMemorySpaceUsed = sort_instr.spaceUsed;
+
+				break;
+		}
+
+		if (!list_member_int(groupInfo->sortMethods, sort_instr.sortMethod))
+			groupInfo->sortMethods = lappend_int(groupInfo->sortMethods,
+					sort_instr.sortMethod);
 
 		if (node->prefixsort_state)
 		{
-			tuplesort_get_stats(node->prefixsort_state,
-					&incsort_info->prefixsort_instrument);
-			incsort_info->prefixsort_group_count = node->prefixsort_group_count;
+			groupInfo = &node->incsort_info.prefixsortGroupInfo;
+			tuplesort_get_stats(node->prefixsort_state, &sort_instr);
+			switch (sort_instr.spaceType)
+			{
+				case SORT_SPACE_TYPE_DISK:
+					groupInfo->totalDiskSpaceUsed += sort_instr.spaceUsed;
+					if (sort_instr.spaceUsed > groupInfo->maxDiskSpaceUsed)
+						groupInfo->maxDiskSpaceUsed = sort_instr.spaceUsed;
+
+					break;
+				case SORT_SPACE_TYPE_MEMORY:
+					groupInfo->totalMemorySpaceUsed += sort_instr.spaceUsed;
+					if (sort_instr.spaceUsed > groupInfo->maxMemorySpaceUsed)
+						groupInfo->maxMemorySpaceUsed = sort_instr.spaceUsed;
+
+					break;
+			}
+
+			if (!list_member_int(groupInfo->sortMethods, sort_instr.sortMethod))
+				groupInfo->sortMethods = lappend_int(groupInfo->sortMethods,
+						sort_instr.sortMethod);
+		}
+
+		/* Record shared stats if we're a parallel worker. */
+		if (node->shared_info && node->am_worker)
+		{
+			Assert(IsParallelWorker());
+			Assert(ParallelWorkerNumber <= node->shared_info->num_workers);
+
+			memcpy(&node->shared_info->sinfo[ParallelWorkerNumber],
+					&node->incsort_info, sizeof(IncrementalSortInfo));
 		}
 	}
 
@@ -900,9 +944,27 @@ ExecInitIncrementalSort(IncrementalSort *node, EState *estate, int eflags)
 	incrsortstate->transfer_tuple = NULL;
 	incrsortstate->n_fullsort_remaining = 0;
 	incrsortstate->bound_Done = 0;
-	incrsortstate->fullsort_group_count = 0;
-	incrsortstate->prefixsort_group_count = 0;
 	incrsortstate->presorted_keys = NULL;
+
+	if (incrsortstate->ss.ps.instrument != NULL)
+	{
+		IncrementalSortGroupInfo *fullsortGroupInfo =
+			&incrsortstate->incsort_info.fullsortGroupInfo;
+		IncrementalSortGroupInfo *prefixsortGroupInfo =
+			&incrsortstate->incsort_info.prefixsortGroupInfo;
+		fullsortGroupInfo->groupCount = 0;
+		fullsortGroupInfo->maxDiskSpaceUsed = 0;
+		fullsortGroupInfo->totalDiskSpaceUsed = 0;
+		fullsortGroupInfo->maxMemorySpaceUsed = 0;
+		fullsortGroupInfo->totalMemorySpaceUsed = 0;
+		fullsortGroupInfo->sortMethods = NIL;
+		prefixsortGroupInfo->groupCount = 0;
+		prefixsortGroupInfo->maxDiskSpaceUsed = 0;
+		prefixsortGroupInfo->totalDiskSpaceUsed = 0;
+		prefixsortGroupInfo->maxMemorySpaceUsed = 0;
+		prefixsortGroupInfo->totalMemorySpaceUsed = 0;
+		prefixsortGroupInfo->sortMethods = NIL;
+	}
 
 	/*
 	 * Miscellaneous initialization
