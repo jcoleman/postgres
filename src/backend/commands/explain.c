@@ -2770,7 +2770,7 @@ show_hash_info(HashState *hashstate, ExplainState *es)
 }
 
 /*
- * If it's EXPLAIN ANALYZE, show exact/lossy pages for a BitmapHeapScan node
+ * If it's EXPLAIN ANALYZE, show exact/lossy/unfetched pages for a BitmapHeapScan node
  */
 static void
 show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
@@ -2781,10 +2781,13 @@ show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
 							   planstate->exact_pages, es);
 		ExplainPropertyInteger("Lossy Heap Blocks", NULL,
 							   planstate->lossy_pages, es);
+		ExplainPropertyInteger("Unfetched Heap Blocks", NULL,
+							   planstate->unfetched_pages, es);
 	}
 	else
 	{
-		if (planstate->exact_pages > 0 || planstate->lossy_pages > 0)
+		if (planstate->exact_pages > 0 || planstate->lossy_pages > 0
+			|| planstate->unfetched_pages > 0)
 		{
 			ExplainIndentText(es);
 			appendStringInfoString(es->str, "Heap Blocks:");
@@ -2792,6 +2795,9 @@ show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
 				appendStringInfo(es->str, " exact=%ld", planstate->exact_pages);
 			if (planstate->lossy_pages > 0)
 				appendStringInfo(es->str, " lossy=%ld", planstate->lossy_pages);
+			if (planstate->unfetched_pages > 0)
+				appendStringInfo(es->str, " unfetched=%ld",
+								 planstate->unfetched_pages);
 			appendStringInfoChar(es->str, '\n');
 		}
 	}
