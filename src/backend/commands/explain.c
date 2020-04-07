@@ -2884,6 +2884,15 @@ show_incremental_sort_info(IncrementalSortState *incrsortstate,
 	if (!es->analyze)
 		return;
 
+	/*
+	 * Since we never have any prefix groups unless we've first sorted a full
+	 * groups and transitioned modes (copying the tuples into a prefix group),
+	 * we don't need to do anything if there were 0 full groups.
+	 *
+	 * We still have to continue after this block if there are no full groups,
+	 * though, since it's possible that we have workers that did real work even
+	 * if the leader didn't participate.
+	 */
 	if (fullsortGroupInfo->groupCount > 0)
 	{
 		show_incremental_sort_group_info(fullsortGroupInfo, "Full-sort", true, es);
@@ -2915,6 +2924,13 @@ show_incremental_sort_info(IncrementalSortState *incrsortstate,
 			 */
 			fullsortGroupInfo = &incsort_info->fullsortGroupInfo;
 			prefixsortGroupInfo = &incsort_info->prefixsortGroupInfo;
+
+			/*
+			 * Since we never have any prefix groups unless we've first sorted
+			 * a full groups and transitioned modes (copying the tuples into a
+			 * prefix group), we don't need to do anything if there were 0 full
+			 * groups.
+			 */
 			if (fullsortGroupInfo->groupCount == 0 &&
 				prefixsortGroupInfo->groupCount == 0)
 				continue;
