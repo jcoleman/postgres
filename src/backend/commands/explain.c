@@ -2717,7 +2717,8 @@ show_sort_info(SortState *sortstate, ExplainState *es)
 			long		spaceUsed;
 
 			sinstrument = &sortstate->shared_info->sinstrument[n];
-			if (sinstrument->sortMethod == SORT_TYPE_STILL_IN_PROGRESS)
+			if (sinstrument->sortMethod == SORT_TYPE_STILL_IN_PROGRESS
+				|| sinstrument->sortMethod == NULL)
 				continue;		/* ignore any unfilled slots */
 			sortMethod = tuplesort_method_name(sinstrument->sortMethod);
 			spaceType = tuplesort_space_type_name(sinstrument->spaceType);
