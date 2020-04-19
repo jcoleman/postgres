@@ -421,6 +421,14 @@ ExecSupportsMarkRestore(Path *pathnode)
 		case T_Sort:
 			return true;
 
+		case T_IncrementalSort:
+
+			/*
+			 * Unlike full sort, incremental sort keeps only a single group of
+			 * tuples in memory, so it can't mark and restore..
+			 */
+			return false;
+
 		case T_CustomScan:
 			{
 				CustomPath *customPath = castNode(CustomPath, pathnode);
