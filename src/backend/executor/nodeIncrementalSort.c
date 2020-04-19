@@ -986,12 +986,15 @@ ExecInitIncrementalSort(IncrementalSort *node, EState *estate, int eflags)
 	SO_printf("ExecInitIncrementalSort: initializing sort node\n");
 
 	/*
-	 * Incremental sort can't be used with either EXEC_FLAG_REWIND,
-	 * EXEC_FLAG_BACKWARD or EXEC_FLAG_MARK, because we only one of many sort
-	 * batches in the current sort state.
+	 * Incremental sort can't be used with EXEC_FLAG_BACKWARD or EXEC_FLAG_MARK,
+	 * because the current sort state contains only one sort batch rather than
+	 * the full result set.
+	 *
+	 * Note: we can't efficiently support EXEC_FLAG_REWIND either, but we don't
+	 * disallow it and instead re-execute if that flag is passed. For more
+	 * details see comments in ExecReScanIncrementalSort.
 	 */
-	Assert((eflags & (EXEC_FLAG_BACKWARD |
-					  EXEC_FLAG_MARK)) == 0);
+	Assert((eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)) == 0);
 
 	/* Initialize state structure. */
 	incrsortstate = makeNode(IncrementalSortState);
@@ -1044,7 +1047,7 @@ ExecInitIncrementalSort(IncrementalSort *node, EState *estate, int eflags)
 	 * We shield the child node from the need to support REWIND, BACKWARD, or
 	 * MARK/RESTORE.
 	 */
-	eflags &= ~(EXEC_FLAG_REWIND | EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK);
+	eflags &= ~(EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK);
 
 	outerPlanState(incrsortstate) = ExecInitNode(outerPlan(node), estate, eflags);
 
@@ -1126,7 +1129,11 @@ ExecReScanIncrementalSort(IncrementalSortState *node)
 	 * store all tuples at once for the full sort.
 	 *
 	 * So even if EXEC_FLAG_REWIND is set we just reset all of our state and
-	 * reexecute the sort along with the child node below us.
+	 * re-execute the sort along with the child node below us.
+	 *
+	 * Alternatively we could have the planner add a materialize node above us,
+	 * but that would likely decrease the value of incremental sort since we'd
+	 * end up fetching the whole result set.
 	 *
 	 * In theory if we've only filled the full sort with one batch (and haven't
 	 * reset it for a new batch yet) then we could efficiently rewind, but
