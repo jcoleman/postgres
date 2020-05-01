@@ -179,24 +179,47 @@ typedef struct SH_ITERATOR
 
 /* externally visible function prototypes */
 #ifdef SH_RAW_ALLOCATOR
+/* <prefix>_hash <prefix>_create(uint32 nelements, void *private_data) */
 SH_SCOPE	SH_TYPE *SH_CREATE(uint32 nelements, void *private_data);
 #else
+/*
+ * <prefix>_hash <prefix>_create(MemoryContext ctx, uint32 nelements,
+ *								 void *private_data)
+ */
 SH_SCOPE	SH_TYPE *SH_CREATE(MemoryContext ctx, uint32 nelements,
 							   void *private_data);
 #endif
+/* void <prefix>_destroy(<prefix>_hash *tb) */
 SH_SCOPE void SH_DESTROY(SH_TYPE * tb);
+/* void <prefix>_reset(<prefix>_hash *tb) */
 SH_SCOPE void SH_RESET(SH_TYPE * tb);
+/* void <prefix>_grow(<prefix>_hash *tb) */
 SH_SCOPE void SH_GROW(SH_TYPE * tb, uint32 newsize);
+/* <element> <prefix>_insert(<prefix>_hash *tb, <key> key, bool *found) */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_INSERT(SH_TYPE * tb, SH_KEY_TYPE key, bool *found);
+/*
+ * <element> <prefix>_insert_hash(<prefix>_hash *tb, <key> key, uint32 hash,
+ * 								  bool *found)
+ */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_INSERT_HASH(SH_TYPE * tb, SH_KEY_TYPE key,
 											uint32 hash, bool *found);
+/* <element> <prefix>_lookup(<prefix>_hash *tb, <key> key) */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_LOOKUP(SH_TYPE * tb, SH_KEY_TYPE key);
+/* <element> <prefix>_lookup_hash(<prefix>_hash *tb, <key> key, uint32 hash) */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_LOOKUP_HASH(SH_TYPE * tb, SH_KEY_TYPE key,
 											uint32 hash);
+/* bool <prefix>_delete(<prefix>_hash *tb, <key> key) */
 SH_SCOPE bool SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key);
+/* void <prefix>_start_iterate(<prefix>_hash *tb, <prefix>_iterator *iter) */
 SH_SCOPE void SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter);
+/*
+ * void <prefix>_start_iterate_at(<prefix>_hash *tb, <prefix>_iterator *iter,
+ *								  uint32 at)
+ */
 SH_SCOPE void SH_START_ITERATE_AT(SH_TYPE * tb, SH_ITERATOR * iter, uint32 at);
+/* <element> <prefix>_iterate(<prefix>_hash *tb, <prefix>_iterator *iter) */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter);
+/* void <prefix>_stat(<prefix>_hash *tb */
 SH_SCOPE void SH_STAT(SH_TYPE * tb);
 
 #endif							/* SH_DECLARE */
