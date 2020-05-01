@@ -51,6 +51,19 @@
  *	  - SH_STORE_HASH - if defined the hash is stored in the elements
  *	  - SH_GET_HASH(tb, a) - return the field to store the hash in
  *
+ *    The element type is required to contain a "uint32 status" member.
+ *
+ *    While SH_STORE_HASH (and subsequently SH_GET_HASH) are optional, because
+ *    the hash table implementation needs to compare hashes to move elements
+ *    (particularly when growing the hash), it's preferable, if possible, to
+ *    store the element's hash in the element's data type. If the hash is so
+ *    stored, the hash table will also compare hashes before calling SH_EQUAL
+ *    when comparing two keys.
+ *
+ *    For convenience the hash table create functions accept a void pointer
+ *    that will be stored in the hash table type's member private_data. This
+ *    allows callbacks to reference caller provided data.
+ *
  *	  For examples of usage look at tidbitmap.c (file local definition) and
  *	  execnodes.h/execGrouping.c (exposed declaration, file local
  *	  implementation).
