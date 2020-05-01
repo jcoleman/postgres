@@ -1,10 +1,27 @@
 /*
  * simplehash.h
  *
- *	  Hash table implementation which will be specialized to user-defined
- *	  types, by including this file to generate the required code.  It's
- *	  probably not worthwhile to do so for hash tables that aren't performance
- *	  or space sensitive.
+ *	  When included this file generates a "templated" (by way of macros)
+ *	  open-addressing hash table implementation specialized to user-defined
+ *	  types.
+ *
+ *	  It's probably not worthwhile to generate such a specialized implementation
+ *	  for hash tables that aren't performance or space sensitive.
+ *
+ *	  Compared to dynahash, simplehash has the following benefits:
+ *
+ *	  - Due to the "templated" code generation has known structure sizes and no
+ *	    indirect function calls (which show up substantially in dynahash
+ *	    profiles). These features considerably increase speed for small
+ *	    entries.
+ *	  - Open addressing has better CPU cache behavior than dynahash's chained
+ *	    hashtables.
+ *	  - The generated interface is type-safe and easier to use than dynahash,
+ *	    though at the cost of more complex setup.
+ *	  - Allocates memory in a MemoryContext or another allocator with a
+ *	    malloc/free style interface (which isn't easily usable in a shared
+ *	    memory context)
+ *	  - Does not require the overhead of a separate memory context.
  *
  * Usage notes:
  *
