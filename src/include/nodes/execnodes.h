@@ -2032,10 +2032,10 @@ typedef struct SortState
 typedef struct IncrementalSortGroupInfo
 {
 	int64		groupCount;
-	long		maxDiskSpaceUsed;
-	long		totalDiskSpaceUsed;
-	long		maxMemorySpaceUsed;
-	long		totalMemorySpaceUsed;
+	uint64		maxDiskSpaceUsed;
+	uint64		totalDiskSpaceUsed;
+	uint64		maxMemorySpaceUsed;
+	uint64		totalMemorySpaceUsed;
 	bits32		sortMethods;	/* bitmask of TuplesortMethod */
 } IncrementalSortGroupInfo;
 
