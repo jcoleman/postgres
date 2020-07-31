@@ -809,6 +809,12 @@ Indexes:
   </para>
 
   <para>
+   <command>CREATE INDEX</command> (including the <literal>CONCURRENTLY</literal>
+   option) commands are included when <command>VACUUM</command> calculates what
+   dead tuples are safe to remove even on tables other than the one being indexed.
+  </para>
+
+  <para>
    Use <xref linkend="sql-dropindex"/>
    to remove an index.
   </para>
