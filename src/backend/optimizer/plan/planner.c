@@ -5018,6 +5018,10 @@ create_ordered_paths(PlannerInfo *root,
 														root->sort_pathkeys,
 														limit_tuples);
 				/* Add projection step if needed */
+				/* TODO: why don't we apply the projection to the path
+				 * before sorting? Is it because it's already been done
+				 * by apply_scanjoin_target_to_paths?
+				 */
 				if (sorted_path->pathtarget != target)
 					sorted_path = apply_projection_to_path(root, ordered_rel,
 														   sorted_path, target);
@@ -5048,6 +5052,10 @@ create_ordered_paths(PlannerInfo *root,
 																limit_tuples);
 
 			/* Add projection step if needed */
+			/* TODO: why don't we apply the projection to the path
+			 * before sorting? Is it because it's already been done
+			 * by apply_scanjoin_target_to_paths?
+			 */
 			if (sorted_path->pathtarget != target)
 				sorted_path = apply_projection_to_path(root, ordered_rel,
 													   sorted_path, target);
@@ -5099,6 +5107,10 @@ create_ordered_paths(PlannerInfo *root,
 										 &total_groups);
 
 			/* Add projection step if needed */
+			/* TODO: why can't we apply the projection to the partial
+			 * path? Is it because it's already been done if possible
+			 * by apply_scanjoin_target_to_paths?
+			 */
 			if (path->pathtarget != target)
 				path = apply_projection_to_path(root, ordered_rel,
 												path, target);
@@ -5160,6 +5172,10 @@ create_ordered_paths(PlannerInfo *root,
 											 &total_groups);
 
 				/* Add projection step if needed */
+				/* TODO: why can't we apply the projection to the partial
+				 * path? Is it because it's already been done if possible
+				 * by apply_scanjoin_target_to_paths?
+				 */
 				if (sorted_path->pathtarget != target)
 					sorted_path = apply_projection_to_path(root, ordered_rel,
 														   sorted_path, target);
