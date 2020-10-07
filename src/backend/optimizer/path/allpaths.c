@@ -556,7 +556,10 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	if (rel->reloptkind == RELOPT_BASEREL &&
 		bms_membership(root->all_baserels) != BMS_SINGLETON)
+	{
 		generate_useful_gather_paths(root, rel, false);
+		generate_useful_paths(root, rel, false);
+	}
 
 	/* Now find the cheapest of the paths for this rel */
 	set_cheapest(rel);
@@ -2950,6 +2953,116 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	}
 }
 
+void
+generate_useful_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
+{
+	ListCell   *lc;
+	double		rows;
+	double	   *rowsp = NULL;
+	List	   *useful_pathkeys_list = NIL;
+	Path	   *cheapest_partial_path = NULL;
+
+	/* Should we override the rel's rowcount estimate? */
+	if (override_rows)
+		rowsp = &rows;
+
+	/* consider incremental sort for interesting orderings */
+	useful_pathkeys_list = get_useful_pathkeys_for_relation(root, rel);
+
+	/* used for explicit (full) sort paths */
+	cheapest_partial_path = linitial(rel->pathlist);
+
+	/*
+	 * Consider incremental sort paths for each interesting ordering.
+	 */
+	foreach(lc, useful_pathkeys_list)
+	{
+		List	   *useful_pathkeys = lfirst(lc);
+		ListCell   *lc2;
+		bool		is_sorted;
+		int			presorted_keys;
+
+		foreach(lc2, rel->pathlist)
+		{
+			Path	   *subpath = (Path *) lfirst(lc2);
+
+			/*
+			 * If the path has no ordering at all, then we can't use either
+			 * incremental sort or rely on implict sorting with a gather
+			 * merge.
+			 */
+			if (subpath->pathkeys == NIL)
+				continue;
+
+			is_sorted = pathkeys_count_contained_in(useful_pathkeys,
+													subpath->pathkeys,
+													&presorted_keys);
+
+			/*
+			 * We don't need to consider the case where a subpath is already
+			 * fully sorted because generate_gather_paths already creates a
+			 * gather merge path for every subpath that has pathkeys present.
+			 *
+			 * But since the subpath is already sorted, we know we don't need
+			 * to consider adding a sort (other either kind) on top of it, so
+			 * we can continue here.
+			 */
+			if (is_sorted)
+				continue;
+
+			/*
+			 * Consider regular sort for the cheapest partial path (for each
+			 * useful pathkeys). We know the path is not sorted, because we'd
+			 * not get here otherwise.
+			 *
+			 * This is not redundant with the gather paths created in
+			 * generate_gather_paths, because that doesn't generate ordered
+			 * output. Here we add an explicit sort to match the useful
+			 * ordering.
+			 */
+			if (cheapest_partial_path == subpath)
+			{
+				Path	   *tmp;
+
+				tmp = (Path *) create_sort_path(root,
+												rel,
+												subpath,
+												useful_pathkeys,
+												-1.0);
+
+				add_path(rel, tmp);
+
+				/* Fall through */
+			}
+
+			/*
+			 * Consider incremental sort, but only when the subpath is already
+			 * partially sorted on a pathkey prefix.
+			 */
+			if (enable_incremental_sort && presorted_keys > 0)
+			{
+				Path	   *tmp;
+
+				/*
+				 * We should have already excluded pathkeys of length 1
+				 * because then presorted_keys > 0 would imply is_sorted was
+				 * true.
+				 */
+				Assert(list_length(useful_pathkeys) != 1);
+
+				tmp = (Path *) create_incremental_sort_path(root,
+															rel,
+															subpath,
+															useful_pathkeys,
+															presorted_keys,
+															-1);
+
+				add_path(rel, tmp);
+			}
+		}
+	}
+}
+
 /*
  * make_rel_from_joinlist
  *	  Build access paths using a "joinlist" to guide the join path search.
@@ -3122,7 +3235,10 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 			 * once we know the final targetlist (see grouping_planner).
 			 */
 			if (lev < levels_needed)
+			{
 				generate_useful_gather_paths(root, rel, false);
+				generate_useful_paths(root, rel, false);
+			}
 
 			/* Find and save the cheapest paths for this rel */
 			set_cheapest(rel);
