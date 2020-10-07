@@ -4825,6 +4825,8 @@ create_distinct_paths(PlannerInfo *root,
 		 * the other.)
 		 */
 		List	   *needed_pathkeys;
+		bool		is_sorted;
+		int			presorted_keys;
 
 		if (parse->hasDistinctOn &&
 			list_length(root->distinct_pathkeys) <
@@ -4836,9 +4838,26 @@ create_distinct_paths(PlannerInfo *root,
 		foreach(lc, input_rel->pathlist)
 		{
 			Path	   *path = (Path *) lfirst(lc);
+			is_sorted = pathkeys_count_contained_in(needed_pathkeys,
+													path->pathkeys,
+													&presorted_keys);
 
-			if (pathkeys_contained_in(needed_pathkeys, path->pathkeys))
+			if (is_sorted)
 			{
+				add_path(distinct_rel, (Path *)
+						 create_upper_unique_path(root, distinct_rel,
+												  path,
+												  list_length(root->distinct_pathkeys),
+												  numDistinctRows));
+			}
+			else if  (enable_incremental_sort && presorted_keys > 0)
+			{
+				path = (Path *) create_incremental_sort_path(root, distinct_rel,
+												 path,
+												 needed_pathkeys,
+												 presorted_keys,
+												 -1.0);
+
 				add_path(distinct_rel, (Path *)
 						 create_upper_unique_path(root, distinct_rel,
 												  path,
