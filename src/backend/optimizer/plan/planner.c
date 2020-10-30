@@ -7414,7 +7414,9 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 		 * current reltarget is.  We don't do this in the case where the
 		 * target is parallel-safe, since we will be able to generate superior
 		 * paths by doing it after the final scan/join target has been
-		 * applied.
+		 * applied. Since the target isn't parallel safe, we don't need to
+		 * apply projections to the partial paths before building gather
+		 * paths.
 		 */
 		generate_useful_gather_paths(root, rel, false);
 
@@ -7567,7 +7569,10 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 	 * if the relation is parallel safe, and we don't do it for child rels to
 	 * avoid creating multiple Gather nodes within the same plan. We must do
 	 * this after all paths have been generated and before set_cheapest, since
-	 * one of the generated paths may turn out to be the cheapest one.
+	 * one of the generated paths may turn out to be the cheapest one. We've
+	 * already applied any necessary projections to the partial paths above so
+	 * any Gather Merge paths will be able to make use of path keys in
+	 * requested target.
 	 */
 	if (rel->consider_parallel && !IS_OTHER_REL(rel))
 		generate_useful_gather_paths(root, rel, false);
