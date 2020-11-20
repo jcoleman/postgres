@@ -2914,14 +2914,6 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 			Path	   *subpath = (Path *) lfirst(lc2);
 			GatherMergePath *path;
 
-			/*
-			 * If the path has no ordering at all, then we can't use either
-			 * incremental sort or rely on implicit sorting with a gather
-			 * merge.
-			 */
-			if (subpath->pathkeys == NIL)
-				continue;
-
 			is_sorted = pathkeys_count_contained_in(useful_pathkeys,
 													subpath->pathkeys,
 													&presorted_keys);
