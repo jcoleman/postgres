@@ -801,9 +801,12 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
  * Find an equivalence class member expression that can be safely used by a
  * sort node on top of the provided relation. The rules here must match those
  * applied in prepare_sort_from_pathkeys.
+ *
+ * If parallel is set to true, then we'll also enforce that the chosen
+ * expression is parallel safe.
  */
 Expr *
-find_em_expr_usable_for_sorting_rel(EquivalenceClass *ec, RelOptInfo *rel)
+find_em_expr_usable_for_sorting_rel(PlannerInfo *root, EquivalenceClass *ec, RelOptInfo *rel, bool parallel)
 {
 	ListCell   *lc_em;
 
@@ -833,6 +836,8 @@ find_em_expr_usable_for_sorting_rel(EquivalenceClass *ec, RelOptInfo *rel)
 		if (!bms_is_subset(em->em_relids, rel->relids))
 			continue;
 
+		if (parallel && !is_parallel_safe(root, (Node *) em_expr))
+			continue;
 		/*
 		 * As long as the expression isn't volatile then
 		 * prepare_sort_from_pathkeys is able to generate a new target entry,
