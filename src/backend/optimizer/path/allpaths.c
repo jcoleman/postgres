@@ -556,7 +556,8 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 * (see grouping_planner).
 	 */
 	if (rel->reloptkind == RELOPT_BASEREL &&
-		bms_membership(root->all_baserels) != BMS_SINGLETON)
+		bms_membership(root->all_baserels) != BMS_SINGLETON
+		&& (rel->subplan_params == NIL || rte->rtekind != RTE_SUBQUERY))
 		generate_useful_gather_paths(root, rel, false);
 
 	/* Now find the cheapest of the paths for this rel */
@@ -592,6 +593,9 @@ static void
 set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 						  RangeTblEntry *rte)
 {
+	bool parallel_safe;
+	bool parallel_safe_except_in_params;
+
 	/*
 	 * The flag has previously been initialized to false, so we can just
 	 * return if it becomes clear that we can't safely set it.
@@ -632,7 +636,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 				if (proparallel != PROPARALLEL_SAFE)
 					return;
-				if (!is_parallel_safe(root, (Node *) rte->tablesample->args))
+				if (!is_parallel_safe(root, (Node *) rte->tablesample->args, NULL))
 					return;
 			}
 
@@ -700,7 +704,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 		case RTE_FUNCTION:
 			/* Check for parallel-restricted functions. */
-			if (!is_parallel_safe(root, (Node *) rte->functions))
+			if (!is_parallel_safe(root, (Node *) rte->functions, NULL))
 				return;
 			break;
 
@@ -710,7 +714,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 		case RTE_VALUES:
 			/* Check for parallel-restricted functions. */
-			if (!is_parallel_safe(root, (Node *) rte->values_lists))
+			if (!is_parallel_safe(root, (Node *) rte->values_lists, NULL))
 				return;
 			break;
 
@@ -747,18 +751,28 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 	 * outer join clauses work correctly.  It would likely break equivalence
 	 * classes, too.
 	 */
-	if (!is_parallel_safe(root, (Node *) rel->baserestrictinfo))
-		return;
+	parallel_safe = is_parallel_safe(root, (Node *) rel->baserestrictinfo,
+			&parallel_safe_except_in_params);
 
 	/*
 	 * Likewise, if the relation's outputs are not parallel-safe, give up.
 	 * (Usually, they're just Vars, but sometimes they're not.)
 	 */
-	if (!is_parallel_safe(root, (Node *) rel->reltarget->exprs))
-		return;
+	if (parallel_safe || parallel_safe_except_in_params)
+	{
+		bool target_parallel_safe;
+		bool target_parallel_safe_ignoring_params = false;
 
-	/* We have a winner. */
-	rel->consider_parallel = true;
+		target_parallel_safe = is_parallel_safe(root,
+				(Node *) rel->reltarget->exprs,
+				&target_parallel_safe_ignoring_params);
+		parallel_safe = parallel_safe && target_parallel_safe;
+		parallel_safe_except_in_params = parallel_safe_except_in_params
+			&& target_parallel_safe_ignoring_params;
+	}
+
+	rel->consider_parallel = parallel_safe;
+	rel->consider_parallel_rechecking_params = parallel_safe_except_in_params;
 }
 
 /*
@@ -2344,9 +2358,21 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 										  pathkeys, required_outer));
 	}
 
+	/*
+	 * XXX: As far as I can tell, the only time partial paths exist here
+	 * is when we're going to execute multiple partial paths in parallel
+	 * under a gather node (instead of executing paths serially under
+	 * an append node). That means that the subquery scan path here
+	 * is self-contained at this point -- so by definition it can't be
+	 * reliant on lateral relids, which means we'll never have to consider
+	 * rechecking params here.
+	 */
+	Assert(!(rel->consider_parallel_rechecking_params && rel->partial_pathlist && !rel->consider_parallel));
+
 	/* If outer rel allows parallelism, do same for partial paths. */
 	if (rel->consider_parallel && bms_is_empty(required_outer))
 	{
+
 		/* If consider_parallel is false, there should be no partial paths. */
 		Assert(sub_final_rel->consider_parallel ||
 			   sub_final_rel->partial_pathlist == NIL);
@@ -2700,7 +2726,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 		cheapest_partial_path->rows * cheapest_partial_path->parallel_workers;
 	simple_gather_path = (Path *)
 		create_gather_path(root, rel, cheapest_partial_path, rel->reltarget,
-						   NULL, rowsp);
+						   rel->lateral_relids, rowsp);
 	add_path(rel, simple_gather_path);
 
 	/*
@@ -2717,7 +2743,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 
 		rows = subpath->rows * subpath->parallel_workers;
 		path = create_gather_merge_path(root, rel, subpath, rel->reltarget,
-										subpath->pathkeys, NULL, rowsp);
+										subpath->pathkeys, rel->lateral_relids, rowsp);
 		add_path(rel, &path->path);
 	}
 }
@@ -2819,9 +2845,13 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	double	   *rowsp = NULL;
 	List	   *useful_pathkeys_list = NIL;
 	Path	   *cheapest_partial_path = NULL;
+	Relids		required_outer = rel->lateral_relids;
 
 	/* If there are no partial paths, there's nothing to do here. */
 	if (rel->partial_pathlist == NIL)
+		return;
+
+	if (!bms_is_subset(required_outer, rel->relids))
 		return;
 
 	/* Should we override the rel's rowcount estimate? */
@@ -2895,7 +2925,7 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 												tmp,
 												rel->reltarget,
 												tmp->pathkeys,
-												NULL,
+												required_outer,
 												rowsp);
 
 				add_path(rel, &path->path);
@@ -2929,7 +2959,7 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 												tmp,
 												rel->reltarget,
 												tmp->pathkeys,
-												NULL,
+												required_outer,
 												rowsp);
 
 				add_path(rel, &path->path);
@@ -3108,7 +3138,8 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 			/*
 			 * Except for the topmost scan/join rel, consider gathering
 			 * partial paths.  We'll do the same for the topmost scan/join rel
-			 * once we know the final targetlist (see grouping_planner).
+			 * once we know the final targetlist (see
+			 * apply_scanjoin_target_to_paths).
 			 */
 			if (lev < levels_needed)
 				generate_useful_gather_paths(root, rel, false);
