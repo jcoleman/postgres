@@ -938,6 +938,7 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel,
 													 required_outer);
 	pathnode->parallel_aware = parallel_workers > 0 ? true : false;
 	pathnode->parallel_safe = rel->consider_parallel;
+	pathnode->parallel_safe_except_params = rel->consider_parallel_rechecking_params;
 	pathnode->parallel_workers = parallel_workers;
 	pathnode->pathkeys = NIL;	/* seqscan has unordered result */
 
@@ -1016,6 +1017,7 @@ create_index_path(PlannerInfo *root,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params;
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = pathkeys;
 
@@ -2003,6 +2005,8 @@ create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
+		subpath->parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->subpath = subpath;
@@ -2633,6 +2637,7 @@ create_projection_path(PlannerInfo *root,
 {
 	ProjectionPath *pathnode = makeNode(ProjectionPath);
 	PathTarget *oldtarget = subpath->pathtarget;
+	bool parallel_safe_except_params;
 
 	pathnode->path.pathtype = T_Result;
 	pathnode->path.parent = rel;
@@ -2643,6 +2648,9 @@ create_projection_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe &&
 		is_parallel_safe(root, (Node *) target->exprs);
+	is_parallel_safe_copy(root, (Node *) target->exprs, &parallel_safe_except_params);
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
+		subpath->parallel_safe_except_params && parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Projection does not change the sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
@@ -3100,6 +3108,8 @@ create_agg_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
+		subpath->parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	if (aggstrategy == AGG_SORTED)
 		pathnode->path.pathkeys = subpath->pathkeys;	/* preserves order */
@@ -3721,6 +3731,8 @@ create_limit_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
+		subpath->parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.rows = subpath->rows;
 	pathnode->path.startup_cost = subpath->startup_cost;

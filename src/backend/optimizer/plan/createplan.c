@@ -1863,6 +1863,9 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 
 	/* use parallel mode for parallel plans. */
 	root->glob->parallelModeNeeded = true;
+	root->glob->parallelModeDependentOnRecheckingParams =
+		/* !best_path->subpath->parallel_safe && */
+		best_path->subpath->parallel_safe_except_params;
 
 	return gather_plan;
 }
@@ -1923,6 +1926,9 @@ create_gather_merge_plan(PlannerInfo *root, GatherMergePath *best_path)
 
 	/* use parallel mode for parallel plans. */
 	root->glob->parallelModeNeeded = true;
+	root->glob->parallelModeDependentOnRecheckingParams =
+		/* !best_path->subpath->parallel_safe && */
+		best_path->subpath->parallel_safe_except_params;
 
 	return gm_plan;
 }
@@ -5277,6 +5283,7 @@ copy_generic_path_info(Plan *dest, Path *src)
 	dest->plan_width = src->pathtarget->width;
 	dest->parallel_aware = src->parallel_aware;
 	dest->parallel_safe = src->parallel_safe;
+	dest->parallel_safe_except_params = src->parallel_safe_except_params;
 }
 
 /*
@@ -5294,6 +5301,7 @@ copy_plan_costsize(Plan *dest, Plan *src)
 	dest->parallel_aware = false;
 	/* Assume the inserted node is parallel-safe, if child plan is. */
 	dest->parallel_safe = src->parallel_safe;
+	dest->parallel_safe_except_params = src->parallel_safe_except_params;
 }
 
 /*
