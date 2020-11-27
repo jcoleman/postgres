@@ -1016,6 +1016,7 @@ create_index_path(PlannerInfo *root,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params;
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = pathkeys;
 
@@ -2557,6 +2558,7 @@ create_projection_path(PlannerInfo *root,
 {
 	ProjectionPath *pathnode = makeNode(ProjectionPath);
 	PathTarget *oldtarget = subpath->pathtarget;
+	bool parallel_safe_except_params;
 
 	pathnode->path.pathtype = T_Result;
 	pathnode->path.parent = rel;
@@ -2567,6 +2569,9 @@ create_projection_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe &&
 		is_parallel_safe(root, (Node *) target->exprs);
+	is_parallel_safe_copy(root, (Node *) target->exprs, &parallel_safe_except_params);
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
+		subpath->parallel_safe_except_params && parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Projection does not change the sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;

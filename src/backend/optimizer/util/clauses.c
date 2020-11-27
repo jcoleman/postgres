@@ -94,6 +94,8 @@ typedef struct
 {
 	char		max_hazard;		/* worst proparallel hazard found so far */
 	char		max_interesting;	/* worst proparallel hazard of interest */
+	/* char max_hazard_from_params; */
+	char max_hazard_ignoring_params;
 	List	   *safe_param_ids; /* PARAM_EXEC Param IDs to treat as safe */
 } max_parallel_hazard_context;
 
@@ -890,9 +892,55 @@ is_parallel_safe(PlannerInfo *root, Node *node)
 	return !max_parallel_hazard_walker(node, &context);
 }
 
+bool
+is_parallel_safe_copy(PlannerInfo *root, Node *node, bool *safe_except_params)
+{
+	max_parallel_hazard_context context;
+	PlannerInfo *proot;
+	ListCell   *l;
+	bool found_hazard;
+
+	/*
+	 * Even if the original querytree contained nothing unsafe, we need to
+	 * search the expression if we have generated any PARAM_EXEC Params while
+	 * planning, because those are parallel-restricted and there might be one
+	 * in this expression.  But otherwise we don't need to look.
+	 */
+	if (root->glob->maxParallelHazard == PROPARALLEL_SAFE &&
+		root->glob->paramExecTypes == NIL)
+		return true;
+	/* Else use max_parallel_hazard's search logic, but stop on RESTRICTED */
+	context.max_hazard = PROPARALLEL_SAFE;
+	context.max_hazard_ignoring_params = PROPARALLEL_SAFE;
+	context.max_interesting = PROPARALLEL_RESTRICTED;
+	context.safe_param_ids = NIL;
+
+	/*
+	 * The params that refer to the same or parent query level are considered
+	 * parallel-safe.  The idea is that we compute such params at Gather or
+	 * Gather Merge node and pass their value to workers.
+	 */
+	for (proot = root; proot != NULL; proot = proot->parent_root)
+	{
+		foreach(l, proot->init_plans)
+		{
+			SubPlan    *initsubplan = (SubPlan *) lfirst(l);
+
+			context.safe_param_ids = list_concat(context.safe_param_ids,
+												 initsubplan->setParam);
+		}
+	}
+
+	found_hazard = max_parallel_hazard_walker(node, &context);
+
+	*safe_except_params = context.max_hazard_ignoring_params == PROPARALLEL_SAFE;
+
+	return !found_hazard;
+}
+
 /* core logic for all parallel-hazard checks */
 static bool
-max_parallel_hazard_test(char proparallel, max_parallel_hazard_context *context)
+max_parallel_hazard_test(char proparallel, max_parallel_hazard_context *context, bool from_param)
 {
 	switch (proparallel)
 	{
@@ -903,12 +951,16 @@ max_parallel_hazard_test(char proparallel, max_parallel_hazard_context *context)
 			/* increase max_hazard to RESTRICTED */
 			Assert(context->max_hazard != PROPARALLEL_UNSAFE);
 			context->max_hazard = proparallel;
+			if (!from_param)
+				context->max_hazard_ignoring_params = proparallel;
 			/* done if we are not expecting any unsafe functions */
 			if (context->max_interesting == proparallel)
 				return true;
 			break;
 		case PROPARALLEL_UNSAFE:
 			context->max_hazard = proparallel;
+			if (!from_param)
+				context->max_hazard_ignoring_params = proparallel;
 			/* we're always done at the first unsafe construct */
 			return true;
 		default:
@@ -923,7 +975,7 @@ static bool
 max_parallel_hazard_checker(Oid func_id, void *context)
 {
 	return max_parallel_hazard_test(func_parallel(func_id),
-									(max_parallel_hazard_context *) context);
+									(max_parallel_hazard_context *) context, false);
 }
 
 static bool
@@ -950,13 +1002,13 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	 */
 	if (IsA(node, CoerceToDomain))
 	{
-		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
 			return true;
 	}
 
 	else if (IsA(node, NextValueExpr))
 	{
-		if (max_parallel_hazard_test(PROPARALLEL_UNSAFE, context))
+		if (max_parallel_hazard_test(PROPARALLEL_UNSAFE, context, false))
 			return true;
 	}
 
@@ -970,7 +1022,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	 */
 	else if (IsA(node, WindowFunc))
 	{
-		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
 			return true;
 	}
 
@@ -990,7 +1042,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	 */
 	else if (IsA(node, SubLink))
 	{
-		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
 			return true;
 	}
 
@@ -1005,8 +1057,8 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		SubPlan    *subplan = (SubPlan *) node;
 		List	   *save_safe_param_ids;
 
-		if (!subplan->parallel_safe &&
-			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+		if (!subplan->parallel_safe && !subplan->parallel_safe_except_params &&
+			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
 			return true;
 		save_safe_param_ids = context->safe_param_ids;
 		context->safe_param_ids = list_concat_copy(context->safe_param_ids,
@@ -1039,7 +1091,8 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		if (param->paramkind != PARAM_EXEC ||
 			!list_member_int(context->safe_param_ids, param->paramid))
 		{
-			if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+			/* TODO: can't short circuit here anymore? */
+			if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, true))
 				return true;
 		}
 		return false;			/* nothing to recurse to */

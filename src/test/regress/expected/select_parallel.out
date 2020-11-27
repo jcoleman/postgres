@@ -313,6 +313,31 @@ select count(*) from tenk1 where (two, four) not in
  10000
 (1 row)
 
+-- test parallel plans for queries containing correlated subplans
+-- where the subplan only needs params available from the current
+-- worker's scan.
+explain (costs off, verbose) select
+  unique1,
+  (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
+  from tenk1 t, generate_series(1, 1000);
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Gather
+   Output: t.unique1, ((SubPlan 1))
+   Workers Planned: 4
+   ->  Nested Loop
+         Output: t.unique1, (SubPlan 1)
+         ->  Parallel Index Only Scan using tenk1_unique1 on public.tenk1 t
+               Output: t.unique1
+         ->  Function Scan on pg_catalog.generate_series
+               Output: generate_series.generate_series
+               Function Call: generate_series(1, 1000)
+         SubPlan 1
+           ->  Index Only Scan using tenk1_unique1 on public.tenk1
+                 Output: t.unique1
+                 Index Cond: (tenk1.unique1 = t.unique1)
+(14 rows)
+
 -- this is not parallel-safe due to use of random() within SubLink's testexpr:
 explain (costs off)
 	select * from tenk1 where (unique1 + random())::integer not in

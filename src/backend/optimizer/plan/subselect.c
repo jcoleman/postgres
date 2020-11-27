@@ -342,6 +342,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 	splan->useHashTable = false;
 	splan->unknownEqFalse = unknownEqFalse;
 	splan->parallel_safe = plan->parallel_safe;
+	splan->parallel_safe_except_params = plan->parallel_safe_except_params;
 	splan->setParam = NIL;
 	splan->parParam = NIL;
 	splan->args = NIL;

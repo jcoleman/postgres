@@ -667,6 +667,7 @@ typedef struct RelOptInfo
 	bool		consider_startup;	/* keep cheap-startup-cost paths? */
 	bool		consider_param_startup; /* ditto, for parameterized paths? */
 	bool		consider_parallel;	/* consider parallel paths? */
+	bool		consider_parallel_rechecking_params;	/* consider parallel paths? */
 
 	/* default result targetlist for Paths scanning this relation */
 	struct PathTarget *reltarget;	/* list of Vars/Exprs, cost, width */
@@ -1146,6 +1147,7 @@ typedef struct Path
 
 	bool		parallel_aware; /* engage parallel-aware logic? */
 	bool		parallel_safe;	/* OK to use as part of parallel plan? */
+	bool		parallel_safe_except_params;	/* OK to use as part of parallel plan? */
 	int			parallel_workers;	/* desired # of workers; 0 = not parallel */
 
 	/* estimated size/costs for path (see costsize.c for more info) */

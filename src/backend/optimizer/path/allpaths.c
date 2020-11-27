@@ -596,6 +596,10 @@ static void
 set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 						  RangeTblEntry *rte)
 {
+	bool found_hazard = false;
+	bool found_hazard_only_in_params = true;
+	bool safe_except_params;
+	rel->consider_parallel_rechecking_params = false;
 	/*
 	 * The flag has previously been initialized to false, so we can just
 	 * return if it becomes clear that we can't safely set it.
@@ -749,18 +753,31 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 	 * outer join clauses work correctly.  It would likely break equivalence
 	 * classes, too.
 	 */
-	if (!is_parallel_safe(root, (Node *) rel->baserestrictinfo))
-		return;
+	found_hazard = found_hazard || !is_parallel_safe_copy(root, (Node *) rel->baserestrictinfo, &safe_except_params);
+	found_hazard_only_in_params = found_hazard_only_in_params && safe_except_params;
+	/* if (!is_parallel_safe(root, (Node *) rel->baserestrictinfo)) */
+	/* 	return; */
 
 	/*
 	 * Likewise, if the relation's outputs are not parallel-safe, give up.
 	 * (Usually, they're just Vars, but sometimes they're not.)
 	 */
-	if (!is_parallel_safe(root, (Node *) rel->reltarget->exprs))
-		return;
+	found_hazard = found_hazard || !is_parallel_safe_copy(root, (Node *) rel->reltarget->exprs, &safe_except_params);
+	found_hazard_only_in_params = found_hazard_only_in_params && safe_except_params;
+	/* if (!is_parallel_safe(root, (Node *) rel->baserestrictinfo)) */
+	/* if (!is_parallel_safe(root, (Node *) rel->reltarget->exprs)) */
+	/* 	return; */
+
+	if (!found_hazard)
+	{
+		rel->consider_parallel = true;
+		rel->consider_parallel_rechecking_params = true;
+	}
+	else if (found_hazard_only_in_params)
+		rel->consider_parallel_rechecking_params = true;
 
 	/* We have a winner. */
-	rel->consider_parallel = true;
+	/* rel->consider_parallel = true; */
 }
 
 /*
