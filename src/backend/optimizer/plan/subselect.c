@@ -342,6 +342,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 	splan->useHashTable = false;
 	splan->unknownEqFalse = unknownEqFalse;
 	splan->parallel_safe = plan->parallel_safe;
+	splan->parallel_safe_ignoring_params = plan->parallel_safe_ignoring_params;
 	splan->setParam = NIL;
 	splan->parParam = NIL;
 	splan->args = NIL;
@@ -1939,6 +1940,7 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 	{
 		SubLink    *sublink = (SubLink *) node;
 		Node	   *testexpr;
+		Node	   *result;
 
 		/*
 		 * First, recursively process the lefthand-side expressions, if any.
@@ -1950,12 +1952,29 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 		/*
 		 * Now build the SubPlan node and make the expr to return.
 		 */
-		return make_subplan(context->root,
+		result = make_subplan(context->root,
 							(Query *) sublink->subselect,
 							sublink->subLinkType,
 							sublink->subLinkId,
 							testexpr,
 							context->isTopQual);
+
+		/*
+		 * If planning determined that a subpath was parallel safe as long
+		 * as required params are provided by each individual worker then we
+		 * can mark the resulting subplan actually parallel safe since we now
+		 * know for certain how that path will be used.
+		 */
+		if (IsA(result, SubPlan) && !((SubPlan*)result)->parallel_safe
+				&& ((SubPlan*)result)->parallel_safe_ignoring_params
+				&& enable_parallel_params_recheck)
+		{
+			Plan *subplan = planner_subplan_get_plan(context->root, (SubPlan*)result);
+			((SubPlan*)result)->parallel_safe = is_parallel_safe(context->root, testexpr, NULL);
+			subplan->parallel_safe = ((SubPlan*)result)->parallel_safe;
+		}
+
+		return result;
 	}
 
 	/*
