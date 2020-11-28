@@ -477,11 +477,21 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 */
 	if (glob->paramExecTypes != NIL)
 	{
+		bool coerce_parallel_safe = false;
+		if (IsA(top_plan, Gather) || IsA(top_plan, GatherMerge))
+			coerce_parallel_safe = top_plan->lefttree->parallel_safe_except_params;
+
 		Assert(list_length(glob->subplans) == list_length(glob->subroots));
 		forboth(lp, glob->subplans, lr, glob->subroots)
 		{
 			Plan	   *subplan = (Plan *) lfirst(lp);
 			PlannerInfo *subroot = lfirst_node(PlannerInfo, lr);
+
+			if (coerce_parallel_safe && !subplan->parallel_safe)
+			{
+				Assert(subplan->parallel_safe_except_params);
+				subplan->parallel_safe = true;
+			}
 
 			SS_finalize_plan(subroot, subplan);
 		}

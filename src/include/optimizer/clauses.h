@@ -17,6 +17,8 @@
 #include "access/htup.h"
 #include "nodes/pathnodes.h"
 
+extern PGDLLIMPORT bool enable_parallel_params_recheck;
+
 typedef struct
 {
 	int			numWindowFuncs; /* total number of WindowFuncs found */

@@ -53,6 +53,7 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+bool enable_parallel_params_recheck = true;
 
 typedef struct
 {
@@ -1057,7 +1058,8 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		SubPlan    *subplan = (SubPlan *) node;
 		List	   *save_safe_param_ids;
 
-		if (!subplan->parallel_safe && !subplan->parallel_safe_except_params &&
+		if (!subplan->parallel_safe &&
+			(!enable_parallel_params_recheck || !subplan->parallel_safe_except_params) &&
 			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
 			return true;
 		save_safe_param_ids = context->safe_param_ids;
