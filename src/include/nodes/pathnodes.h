@@ -144,6 +144,8 @@ typedef struct PlannerGlobal
 
 	char		maxParallelHazard;	/* worst PROPARALLEL hazard level */
 
+	bool		parallelModeDependentOnRecheckingParams; /* parallel mode actually required? */
+
 	PartitionDirectory partition_directory; /* partition descriptors */
 } PlannerGlobal;
 

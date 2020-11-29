@@ -1748,6 +1748,9 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 
 	/* use parallel mode for parallel plans. */
 	root->glob->parallelModeNeeded = true;
+	root->glob->parallelModeDependentOnRecheckingParams =
+		/* !best_path->subpath->parallel_safe && */
+		best_path->subpath->parallel_safe_except_params;
 
 	return gather_plan;
 }
@@ -1806,6 +1809,9 @@ create_gather_merge_plan(PlannerInfo *root, GatherMergePath *best_path)
 
 	/* use parallel mode for parallel plans. */
 	root->glob->parallelModeNeeded = true;
+	root->glob->parallelModeDependentOnRecheckingParams =
+		/* !best_path->subpath->parallel_safe && */
+		best_path->subpath->parallel_safe_except_params;
 
 	return gm_plan;
 }

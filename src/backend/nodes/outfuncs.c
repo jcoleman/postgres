@@ -2207,6 +2207,7 @@ _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 	WRITE_BOOL_FIELD(parallelModeOK);
 	WRITE_BOOL_FIELD(parallelModeNeeded);
 	WRITE_CHAR_FIELD(maxParallelHazard);
+	WRITE_BOOL_FIELD(parallelModeDependentOnRecheckingParams);
 }
 
 static void

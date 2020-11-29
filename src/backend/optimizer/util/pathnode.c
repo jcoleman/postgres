@@ -3657,6 +3657,8 @@ create_limit_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
+	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
+		subpath->parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.rows = subpath->rows;
 	pathnode->path.startup_cost = subpath->startup_cost;
