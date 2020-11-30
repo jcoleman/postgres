@@ -353,36 +353,36 @@ explain (costs off, verbose) select
                  Index Cond: (tenk1.unique1 = t.unique1)
 (9 rows)
 
-explain (analyze, costs off, verbose) select
+explain (analyze, costs off, verbose, timing off) select
   (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
   from tenk1 t
   limit 1;
-                                                      QUERY PLAN                                                      
-----------------------------------------------------------------------------------------------------------------------
- Limit (actual time=0.442..13.007 rows=1 loops=1)
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Limit (actual rows=1 loops=1)
    Output: ((SubPlan 1))
-   ->  Gather (actual time=0.440..13.003 rows=1 loops=1)
+   ->  Gather (actual rows=1 loops=1)
          Output: ((SubPlan 1))
          Workers Planned: 4
          Workers Launched: 4
-         ->  Parallel Index Only Scan using tenk1_unique1 on public.tenk1 t (actual time=0.080..0.080 rows=1 loops=5)
+         ->  Parallel Index Only Scan using tenk1_unique1 on public.tenk1 t (actual rows=1 loops=5)
                Output: (SubPlan 1)
                Heap Fetches: 0
-               Worker 0:  actual time=0.083..0.083 rows=1 loops=1
-               Worker 1:  actual time=0.053..0.054 rows=1 loops=1
-               Worker 2:  actual time=0.087..0.088 rows=1 loops=1
-               Worker 3:  actual time=0.079..0.079 rows=1 loops=1
+               Worker 0:  actual rows=1 loops=1
+               Worker 1:  actual rows=1 loops=1
+               Worker 2:  actual rows=1 loops=1
+               Worker 3:  actual rows=1 loops=1
                SubPlan 1
-                 ->  Index Only Scan using tenk1_unique1 on public.tenk1 (actual time=0.024..0.024 rows=1 loops=5)
+                 ->  Index Only Scan using tenk1_unique1 on public.tenk1 (actual rows=1 loops=5)
                        Output: t.unique1
                        Index Cond: (tenk1.unique1 = t.unique1)
                        Heap Fetches: 0
-                       Worker 0:  actual time=0.024..0.025 rows=1 loops=1
-                       Worker 1:  actual time=0.017..0.017 rows=1 loops=1
-                       Worker 2:  actual time=0.027..0.028 rows=1 loops=1
-                       Worker 3:  actual time=0.026..0.026 rows=1 loops=1
- Planning Time: 0.312 ms
- Execution Time: 13.065 ms
+                       Worker 0:  actual rows=1 loops=1
+                       Worker 1:  actual rows=1 loops=1
+                       Worker 2:  actual rows=1 loops=1
+                       Worker 3:  actual rows=1 loops=1
+ Planning Time: 0.233 ms
+ Execution Time: 7.467 ms
 (24 rows)
 
 explain (costs off, verbose) select t.unique1

@@ -122,7 +122,7 @@ explain (costs off, verbose) select
 explain (costs off, verbose) select
   (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
   from tenk1 t;
-explain (analyze, costs off, verbose) select
+explain (analyze, costs off, verbose, timing off) select
   (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
   from tenk1 t
   limit 1;
