@@ -152,6 +152,7 @@ static RelOptInfo *create_grouping_paths(PlannerInfo *root,
 										 RelOptInfo *input_rel,
 										 PathTarget *target,
 										 bool target_parallel_safe,
+										 bool target_parallel_safe_except_params,
 										 const AggClauseCosts *agg_costs,
 										 grouping_sets_data *gd);
 static bool is_degenerate_grouping(PlannerInfo *root);
@@ -160,6 +161,7 @@ static void create_degenerate_grouping_paths(PlannerInfo *root,
 											 RelOptInfo *grouped_rel);
 static RelOptInfo *make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 									 PathTarget *target, bool target_parallel_safe,
+									 bool target_parallel_safe_except_params,
 									 Node *havingQual);
 static void create_ordinary_grouping_paths(PlannerInfo *root,
 										   RelOptInfo *input_rel,
@@ -235,6 +237,7 @@ static void apply_scanjoin_target_to_paths(PlannerInfo *root,
 										   List *scanjoin_targets,
 										   List *scanjoin_targets_contain_srfs,
 										   bool scanjoin_target_parallel_safe,
+										   bool scanjoin_target_parallel_safe_except_params,
 										   bool tlist_same_exprs);
 static void create_partitionwise_grouping_paths(PlannerInfo *root,
 												RelOptInfo *input_rel,
@@ -487,9 +490,13 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 			Plan	   *subplan = (Plan *) lfirst(lp);
 			PlannerInfo *subroot = lfirst_node(PlannerInfo, lr);
 
-			if (coerce_parallel_safe && !subplan->parallel_safe)
+			if (coerce_parallel_safe && !subplan->parallel_safe &&
+					subplan->parallel_safe_except_params)
 			{
-				Assert(subplan->parallel_safe_except_params);
+				/* TODO: We should probably figure out a way
+				 * to determine if this is one of the subplans
+				 * we need for the parallel part of the plan.
+				 */
 				subplan->parallel_safe = true;
 			}
 
@@ -1848,6 +1855,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 	List	   *final_targets;
 	List	   *final_targets_contain_srfs;
 	bool		final_target_parallel_safe;
+	bool		final_target_parallel_safe_except_params = false;
 	RelOptInfo *current_rel;
 	RelOptInfo *final_rel;
 	FinalPathExtraData extra;
@@ -1910,7 +1918,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 
 		/* And check whether it's parallel safe */
 		final_target_parallel_safe =
-			is_parallel_safe(root, (Node *) final_target->exprs);
+			is_parallel_safe_copy(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
 
 		/* The setop result tlist couldn't contain any SRFs */
 		Assert(!parse->hasTargetSRFs);
@@ -1944,14 +1952,17 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		List	   *sort_input_targets;
 		List	   *sort_input_targets_contain_srfs;
 		bool		sort_input_target_parallel_safe;
+		bool		sort_input_target_parallel_safe_except_params = false;
 		PathTarget *grouping_target;
 		List	   *grouping_targets;
 		List	   *grouping_targets_contain_srfs;
 		bool		grouping_target_parallel_safe;
+		bool		grouping_target_parallel_safe_except_params = false;
 		PathTarget *scanjoin_target;
 		List	   *scanjoin_targets;
 		List	   *scanjoin_targets_contain_srfs;
 		bool		scanjoin_target_parallel_safe;
+		bool		scanjoin_target_parallel_safe_except_params = false;
 		bool		scanjoin_target_same_exprs;
 		bool		have_grouping;
 		AggClauseCosts agg_costs;
@@ -2074,7 +2085,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		 */
 		final_target = create_pathtarget(root, root->processed_tlist);
 		final_target_parallel_safe =
-			is_parallel_safe(root, (Node *) final_target->exprs);
+			is_parallel_safe_copy(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
 
 		/*
 		 * If ORDER BY was given, consider whether we should use a post-sort
@@ -2087,12 +2098,13 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 													   final_target,
 													   &have_postponed_srfs);
 			sort_input_target_parallel_safe =
-				is_parallel_safe(root, (Node *) sort_input_target->exprs);
+				is_parallel_safe_copy(root, (Node *) sort_input_target->exprs, &sort_input_target_parallel_safe_except_params);
 		}
 		else
 		{
 			sort_input_target = final_target;
 			sort_input_target_parallel_safe = final_target_parallel_safe;
+			sort_input_target_parallel_safe_except_params = final_target_parallel_safe_except_params;
 		}
 
 		/*
@@ -2106,12 +2118,13 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 													   final_target,
 													   activeWindows);
 			grouping_target_parallel_safe =
-				is_parallel_safe(root, (Node *) grouping_target->exprs);
+				is_parallel_safe_copy(root, (Node *) grouping_target->exprs, &grouping_target_parallel_safe_except_params);
 		}
 		else
 		{
 			grouping_target = sort_input_target;
 			grouping_target_parallel_safe = sort_input_target_parallel_safe;
+			grouping_target_parallel_safe_except_params = sort_input_target_parallel_safe_except_params;
 		}
 
 		/*
@@ -2125,12 +2138,13 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		{
 			scanjoin_target = make_group_input_target(root, final_target);
 			scanjoin_target_parallel_safe =
-				is_parallel_safe(root, (Node *) scanjoin_target->exprs);
+				is_parallel_safe_copy(root, (Node *) scanjoin_target->exprs, &scanjoin_target_parallel_safe_except_params);
 		}
 		else
 		{
 			scanjoin_target = grouping_target;
 			scanjoin_target_parallel_safe = grouping_target_parallel_safe;
+			scanjoin_target_parallel_safe_except_params = grouping_target_parallel_safe_except_params;
 		}
 
 		/*
@@ -2182,6 +2196,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		apply_scanjoin_target_to_paths(root, current_rel, scanjoin_targets,
 									   scanjoin_targets_contain_srfs,
 									   scanjoin_target_parallel_safe,
+									   scanjoin_target_parallel_safe_except_params,
 									   scanjoin_target_same_exprs);
 
 		/*
@@ -2208,6 +2223,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 												current_rel,
 												grouping_target,
 												grouping_target_parallel_safe,
+												grouping_target_parallel_safe_except_params,
 												&agg_costs,
 												gset_data);
 			/* Fix things up if grouping_target contains SRFs */
@@ -2282,10 +2298,25 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 	 * not a SELECT, consider_parallel will be false for every relation in the
 	 * query.
 	 */
-	if (current_rel->consider_parallel &&
-		is_parallel_safe(root, parse->limitOffset) &&
-		is_parallel_safe(root, parse->limitCount))
-		final_rel->consider_parallel = true;
+	if (current_rel->consider_parallel || current_rel->consider_parallel_rechecking_params)
+	{
+		bool		limit_count_parallel_safe;
+		bool		limit_offset_parallel_safe;
+		bool		limit_count_parallel_safe_except_params = false;
+		bool		limit_offset_parallel_safe_except_params = false;
+
+		limit_count_parallel_safe = is_parallel_safe_copy(root, parse->limitCount, &limit_count_parallel_safe_except_params);
+		limit_offset_parallel_safe = is_parallel_safe_copy(root, parse->limitOffset, &limit_offset_parallel_safe_except_params);
+
+		if (current_rel->consider_parallel &&
+				limit_count_parallel_safe &&
+				limit_offset_parallel_safe)
+			final_rel->consider_parallel = true;
+		if (current_rel->consider_parallel_rechecking_params &&
+				limit_count_parallel_safe_except_params &&
+				limit_offset_parallel_safe_except_params)
+			final_rel->consider_parallel_rechecking_params = true;
+	}
 
 	/*
 	 * If the current_rel belongs to a single FDW, so does the final_rel.
@@ -3811,6 +3842,7 @@ create_grouping_paths(PlannerInfo *root,
 					  RelOptInfo *input_rel,
 					  PathTarget *target,
 					  bool target_parallel_safe,
+					  bool target_parallel_safe_except_params,
 					  const AggClauseCosts *agg_costs,
 					  grouping_sets_data *gd)
 {
@@ -3823,7 +3855,9 @@ create_grouping_paths(PlannerInfo *root,
 	 * aggregation paths.
 	 */
 	grouped_rel = make_grouping_rel(root, input_rel, target,
-									target_parallel_safe, parse->havingQual);
+									target_parallel_safe,
+									target_parallel_safe_except_params,
+									parse->havingQual);
 
 	/*
 	 * Create either paths for a degenerate grouping or paths for ordinary
@@ -3884,6 +3918,7 @@ create_grouping_paths(PlannerInfo *root,
 
 		extra.flags = flags;
 		extra.target_parallel_safe = target_parallel_safe;
+		extra.target_parallel_safe_except_params = target_parallel_safe_except_params;
 		extra.havingQual = parse->havingQual;
 		extra.targetList = parse->targetList;
 		extra.partial_costs_set = false;
@@ -3919,7 +3954,7 @@ create_grouping_paths(PlannerInfo *root,
 static RelOptInfo *
 make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 				  PathTarget *target, bool target_parallel_safe,
-				  Node *havingQual)
+				  bool target_parallel_safe_except_params, Node *havingQual)
 {
 	RelOptInfo *grouped_rel;
 
@@ -3947,9 +3982,21 @@ make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 	 * can't be parallel-safe, either.  Otherwise, it's parallel-safe if the
 	 * target list and HAVING quals are parallel-safe.
 	 */
-	if (input_rel->consider_parallel && target_parallel_safe &&
-		is_parallel_safe(root, (Node *) havingQual))
-		grouped_rel->consider_parallel = true;
+	if ((input_rel->consider_parallel || input_rel->consider_parallel_rechecking_params)
+			&& (target_parallel_safe || target_parallel_safe_except_params))
+	{
+		bool having_qual_parallel_safe;
+		bool having_qual_parallel_safe_except_params = false;
+
+		having_qual_parallel_safe = is_parallel_safe_copy(root, (Node *) havingQual,
+				&having_qual_parallel_safe_except_params);
+
+		grouped_rel->consider_parallel = input_rel->consider_parallel &&
+			having_qual_parallel_safe && target_parallel_safe;
+		grouped_rel->consider_parallel_rechecking_params =
+			input_rel->consider_parallel_rechecking_params &&
+			having_qual_parallel_safe_except_params && target_parallel_safe_except_params;
+	}
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the grouped rel.
@@ -6910,6 +6957,8 @@ create_partial_grouping_paths(PlannerInfo *root,
 											grouped_rel->relids);
 	partially_grouped_rel->consider_parallel =
 		grouped_rel->consider_parallel;
+	partially_grouped_rel->consider_parallel_rechecking_params =
+		grouped_rel->consider_parallel_rechecking_params;
 	partially_grouped_rel->reloptkind = grouped_rel->reloptkind;
 	partially_grouped_rel->serverid = grouped_rel->serverid;
 	partially_grouped_rel->userid = grouped_rel->userid;
@@ -7381,6 +7430,7 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 							   List *scanjoin_targets,
 							   List *scanjoin_targets_contain_srfs,
 							   bool scanjoin_target_parallel_safe,
+							   bool scanjoin_target_parallel_safe_except_params,
 							   bool tlist_same_exprs)
 {
 	bool		rel_is_partitioned = IS_PARTITIONED_REL(rel);
@@ -7389,6 +7439,11 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 
 	/* This recurses, so be paranoid. */
 	check_stack_depth();
+
+	/*
+	 * TOOD: when/how do we want to generate gather paths if
+	 * scanjoin_target_parallel_safe_except_params = true
+	 */
 
 	/*
 	 * If the rel is partitioned, we want to drop its existing paths and
@@ -7431,6 +7486,7 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 		/* Can't use parallel query above this level. */
 		rel->partial_pathlist = NIL;
 		rel->consider_parallel = false;
+		rel->consider_parallel_rechecking_params = false;
 	}
 
 	/* Finish dropping old paths for a partitioned rel, per comment above */
@@ -7561,6 +7617,7 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 										   child_scanjoin_targets,
 										   scanjoin_targets_contain_srfs,
 										   scanjoin_target_parallel_safe,
+										   scanjoin_target_parallel_safe_except_params,
 										   tlist_same_exprs);
 
 			/* Save non-dummy children for Append paths. */
@@ -7681,6 +7738,7 @@ create_partitionwise_grouping_paths(PlannerInfo *root,
 		child_grouped_rel = make_grouping_rel(root, child_input_rel,
 											  child_target,
 											  extra->target_parallel_safe,
+											  extra->target_parallel_safe_except_params,
 											  child_extra.havingQual);
 
 		/* Create grouping paths for this child relation. */

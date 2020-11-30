@@ -2493,6 +2493,7 @@ typedef struct
 
 	/* Data which may differ across partitions. */
 	bool		target_parallel_safe;
+	bool		target_parallel_safe_except_params;
 	Node	   *havingQual;
 	List	   *targetList;
 	PartitionwiseAggregateType patype;

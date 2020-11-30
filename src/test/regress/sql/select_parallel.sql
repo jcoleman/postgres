@@ -117,9 +117,19 @@ select count(*) from tenk1 where (two, four) not in
 -- where the subplan only needs params available from the current
 -- worker's scan.
 explain (costs off, verbose) select
-  unique1,
   (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
-  from tenk1 t, generate_series(1, 1000);
+  from tenk1 t, generate_series(1, 10);
+explain (costs off, verbose) select
+  (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
+  from tenk1 t;
+explain (analyze, costs off, verbose) select
+  (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
+  from tenk1 t
+  limit 1;
+explain (costs off, verbose) select t.unique1
+  from tenk1 t
+  where t.unique1 = (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1);
+-- TODO: test subplan in join/lateral join
 -- this is not parallel-safe due to use of random() within SubLink's testexpr:
 explain (costs off)
 	select * from tenk1 where (unique1 + random())::integer not in
@@ -455,6 +465,18 @@ EXECUTE pstmt('1', make_some_array(1,2));
 DEALLOCATE pstmt;
 
 -- test interaction between subquery and partial_paths
+-- this plan changes to using a non-parallel index only
+-- scan on tenk1_unique1 (the parallel version of the subquery scan
+-- is cheaper, but only by ~30, and cost comparison treats them as equal
+-- since the costs are so large) because set_rel_consider_parallel
+-- called from make_one_rel sees the subplan as parallel safe now
+-- (in context it now knows the params are actually parallel safe).
+-- Because of that the non-parallel index path is now parallel_safe=true,
+-- therefore it wins the COSTS_EQUAL comparison in add_path.
+-- Perhaps any is_parallel_safe calls made for the purpose of determining
+-- consider_parallel should disable that behavior? It's not clear which is
+-- correct.
+set enable_parallel_params_recheck = off;
 CREATE VIEW tenk1_vw_sec WITH (security_barrier) AS SELECT * FROM tenk1;
 EXPLAIN (COSTS OFF)
 SELECT 1 FROM tenk1_vw_sec

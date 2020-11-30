@@ -2430,6 +2430,7 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	}
 
 	/* If outer rel allows parallelism, do same for partial paths. */
+	/* TODO: consider parallel_safe_except_params? */
 	if (rel->consider_parallel && bms_is_empty(required_outer))
 	{
 		/* If consider_parallel is false, there should be no partial paths. */
