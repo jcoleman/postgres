@@ -1097,25 +1097,23 @@ explain (costs off) select t.unique1 from tenk1 t
 join lateral (select t.unique1 from tenk1 offset 0) l on true;
                              QUERY PLAN                              
 ---------------------------------------------------------------------
- Nested Loop
-   ->  Gather
-         Workers Planned: 4
+ Gather
+   Workers Planned: 4
+   ->  Nested Loop
          ->  Parallel Index Only Scan using tenk1_unique1 on tenk1 t
-   ->  Gather
-         Workers Planned: 4
-         ->  Parallel Index Only Scan using tenk1_hundred on tenk1
-(7 rows)
+         ->  Index Only Scan using tenk1_hundred on tenk1
+(5 rows)
 
 explain (costs off) select t.unique1 from tenk1 t
 join lateral (select t.unique1 from tenk1 limit 1) l on true;
                              QUERY PLAN                              
 ---------------------------------------------------------------------
- Nested Loop
-   ->  Gather
-         Workers Planned: 4
+ Gather
+   Workers Planned: 4
+   ->  Nested Loop
          ->  Parallel Index Only Scan using tenk1_unique1 on tenk1 t
-   ->  Limit
-         ->  Seq Scan on tenk1
+         ->  Limit
+               ->  Seq Scan on tenk1
 (6 rows)
 
 explain (costs off) select t.unique1 from tenk1 t
