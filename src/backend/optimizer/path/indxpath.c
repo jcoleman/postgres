@@ -1045,8 +1045,8 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 		 * parallel index scan for bitmap index scans.
 		 */
 		if (index->amcanparallel &&
-			rel->consider_parallel && outer_relids == NULL &&
-			scantype != ST_BITMAPSCAN)
+			(rel->consider_parallel || rel->consider_parallel_rechecking_params) &&
+			outer_relids == NULL && scantype != ST_BITMAPSCAN)
 		{
 			ipath = create_index_path(root, index,
 									  index_clauses,
@@ -1097,8 +1097,8 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 
 			/* If appropriate, consider parallel index scan */
 			if (index->amcanparallel &&
-				rel->consider_parallel && outer_relids == NULL &&
-				scantype != ST_BITMAPSCAN)
+				(rel->consider_parallel || rel->consider_parallel_rechecking_params) &&
+				outer_relids == NULL && scantype != ST_BITMAPSCAN)
 			{
 				ipath = create_index_path(root, index,
 										  index_clauses,

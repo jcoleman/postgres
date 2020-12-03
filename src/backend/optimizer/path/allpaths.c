@@ -560,7 +560,8 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 * (see grouping_planner).
 	 */
 	if (rel->reloptkind == RELOPT_BASEREL &&
-		bms_membership(root->all_baserels) != BMS_SINGLETON)
+		bms_membership(root->all_baserels) != BMS_SINGLETON
+		&& (rel->subplan_params == NIL || rte->rtekind != RTE_SUBQUERY))
 		generate_useful_gather_paths(root, rel, false);
 
 	/* Now find the cheapest of the paths for this rel */
@@ -2433,10 +2434,14 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 	/* If outer rel allows parallelism, do same for partial paths. */
 	/* TODO: consider parallel_safe_except_params? */
-	if (rel->consider_parallel && bms_is_empty(required_outer))
+	if (rel->consider_parallel || rel->consider_parallel_rechecking_params)
 	{
+		bool required_outer_empty = bms_is_empty(required_outer);
+		bool known_safe = rel->consider_parallel && required_outer_empty;
+
 		/* If consider_parallel is false, there should be no partial paths. */
 		Assert(sub_final_rel->consider_parallel ||
+			sub_final_rel->consider_parallel_rechecking_params ||
 			   sub_final_rel->partial_pathlist == NIL);
 
 		/* Same for partial paths. */
@@ -2445,17 +2450,22 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			Path	   *subpath = (Path *) lfirst(lc);
 			List	   *pathkeys;
 
-			/* Convert subpath's pathkeys to outer representation */
-			pathkeys = convert_subquery_pathkeys(root,
-												 rel,
-												 subpath->pathkeys,
-												 make_tlist_from_pathtarget(subpath->pathtarget));
+			if (known_safe ||
+					(sub_final_rel->consider_parallel_rechecking_params))
+					 /* && is_parallel_safe... */
+			{
+					/* Convert subpath's pathkeys to outer representation */
+				pathkeys = convert_subquery_pathkeys(root,
+													 rel,
+													 subpath->pathkeys,
+													 make_tlist_from_pathtarget(subpath->pathtarget));
 
-			/* Generate outer path using this subpath */
-			add_partial_path(rel, (Path *)
-							 create_subqueryscan_path(root, rel, subpath,
-													  pathkeys,
-													  required_outer));
+				/* Generate outer path using this subpath */
+				add_partial_path(rel, (Path *)
+								 create_subqueryscan_path(root, rel, subpath,
+														  pathkeys,
+														  required_outer));
+			}
 		}
 	}
 }
@@ -2788,7 +2798,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 		cheapest_partial_path->rows * cheapest_partial_path->parallel_workers;
 	simple_gather_path = (Path *)
 		create_gather_path(root, rel, cheapest_partial_path, rel->reltarget,
-						   NULL, rowsp);
+						   rel->lateral_relids, rowsp);
 	add_path(rel, simple_gather_path);
 
 	/*
@@ -2805,7 +2815,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 
 		rows = subpath->rows * subpath->parallel_workers;
 		path = create_gather_merge_path(root, rel, subpath, rel->reltarget,
-										subpath->pathkeys, NULL, rowsp);
+										subpath->pathkeys, rel->lateral_relids, rowsp);
 		add_path(rel, &path->path);
 	}
 }
@@ -2908,9 +2918,13 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	double	   *rowsp = NULL;
 	List	   *useful_pathkeys_list = NIL;
 	Path	   *cheapest_partial_path = NULL;
+	Relids		required_outer = rel->lateral_relids;
 
 	/* If there are no partial paths, there's nothing to do here. */
 	if (rel->partial_pathlist == NIL)
+		return;
+
+	if (!bms_is_subset(required_outer, rel->relids))
 		return;
 
 	/* Should we override the rel's rowcount estimate? */
@@ -2983,7 +2997,7 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 												tmp,
 												rel->reltarget,
 												tmp->pathkeys,
-												NULL,
+												required_outer,
 												rowsp);
 
 				add_path(rel, &path->path);
@@ -3017,7 +3031,7 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 												tmp,
 												rel->reltarget,
 												tmp->pathkeys,
-												NULL,
+												required_outer,
 												rowsp);
 
 				add_path(rel, &path->path);
@@ -3195,7 +3209,8 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 			/*
 			 * Except for the topmost scan/join rel, consider gathering
 			 * partial paths.  We'll do the same for the topmost scan/join rel
-			 * once we know the final targetlist (see grouping_planner).
+			 * once we know the final targetlist (see
+			 * apply_scanjoin_target_to_paths).
 			 */
 			if (lev < levels_needed)
 				generate_useful_gather_paths(root, rel, false);

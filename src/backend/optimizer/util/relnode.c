@@ -616,6 +616,7 @@ build_join_rel(PlannerInfo *root,
 	joinrel->consider_startup = (root->tuple_fraction > 0);
 	joinrel->consider_param_startup = false;
 	joinrel->consider_parallel = false;
+	joinrel->consider_parallel_rechecking_params = false;
 	joinrel->reltarget = create_empty_pathtarget();
 	joinrel->pathlist = NIL;
 	joinrel->ppilist = NIL;
@@ -740,10 +741,33 @@ build_join_rel(PlannerInfo *root,
 	 * take; therefore, we should make the same decision here however we get
 	 * here.
 	 */
-	if (inner_rel->consider_parallel && outer_rel->consider_parallel &&
-		is_parallel_safe(root, (Node *) restrictlist) &&
-		is_parallel_safe(root, (Node *) joinrel->reltarget->exprs))
-		joinrel->consider_parallel = true;
+	if ((inner_rel->consider_parallel || inner_rel->consider_parallel_rechecking_params)
+			&& (outer_rel->consider_parallel || outer_rel->consider_parallel_rechecking_params))
+	{
+		bool restrictlist_parallel_safe;
+		bool restrictlist_parallel_safe_except_params = false;
+		bool target_parallel_safe;
+		bool target_parallel_safe_except_params = false;
+
+		restrictlist_parallel_safe = is_parallel_safe_copy(root, (Node *) restrictlist, &restrictlist_parallel_safe_except_params);
+		target_parallel_safe = is_parallel_safe_copy(root, (Node *) joinrel->reltarget->exprs, &target_parallel_safe_except_params);
+
+		if (inner_rel->consider_parallel && outer_rel->consider_parallel
+				&& restrictlist_parallel_safe && target_parallel_safe)
+			joinrel->consider_parallel = true;
+
+		if (inner_rel->consider_parallel_rechecking_params
+				&& outer_rel->consider_parallel_rechecking_params
+				&& restrictlist_parallel_safe_except_params
+				&& target_parallel_safe_except_params)
+			joinrel->consider_parallel_rechecking_params = true;
+	}
+
+    /*  */
+	/* if (inner_rel->consider_parallel && outer_rel->consider_parallel && */
+	/* 	is_parallel_safe(root, (Node *) restrictlist) && */
+	/* 	is_parallel_safe(root, (Node *) joinrel->reltarget->exprs)) */
+	/* 	joinrel->consider_parallel = true; */
 
 	/* Add the joinrel to the PlannerInfo. */
 	add_join_rel(root, joinrel);
@@ -887,6 +911,7 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 
 	/* Child joinrel is parallel safe if parent is parallel safe. */
 	joinrel->consider_parallel = parent_joinrel->consider_parallel;
+	joinrel->consider_parallel_rechecking_params = parent_joinrel->consider_parallel_rechecking_params;
 
 	/* Set estimates of the child-joinrel's size. */
 	set_joinrel_size_estimates(root, joinrel, outer_rel, inner_rel,
@@ -1215,6 +1240,7 @@ fetch_upper_rel(PlannerInfo *root, UpperRelationKind kind, Relids relids)
 	upperrel->consider_startup = (root->tuple_fraction > 0);
 	upperrel->consider_param_startup = false;
 	upperrel->consider_parallel = false;	/* might get changed later */
+	upperrel->consider_parallel_rechecking_params = false;	/* might get changed later */
 	upperrel->reltarget = create_empty_pathtarget();
 	upperrel->pathlist = NIL;
 	upperrel->cheapest_startup_path = NULL;

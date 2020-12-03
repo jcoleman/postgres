@@ -505,6 +505,7 @@ try_partial_nestloop_path(PlannerInfo *root,
 		else
 			outerrelids = outerrel->relids;
 
+		/* TODO: recheck parallel safety here? */
 		if (!bms_is_subset(inner_paramrels, outerrelids))
 			return;
 	}
@@ -1512,8 +1513,8 @@ match_unsorted_outer(PlannerInfo *root,
 	 * partial path and the joinrel is parallel-safe.  However, we can't
 	 * handle JOIN_UNIQUE_OUTER, because the outer path will be partial, and
 	 * therefore we won't be able to properly guarantee uniqueness.  Nor can
-	 * we handle extra_lateral_rels, since partial paths must not be
-	 * parameterized. Similarly, we can't handle JOIN_FULL and JOIN_RIGHT,
+	 * we handle extra_lateral_rels [TODO: what does this reference?], since partial paths must not be
+	 * parameterized [TODO: Not true anymore]. Similarly, we can't handle JOIN_FULL and JOIN_RIGHT,
 	 * because they can produce false null extended rows.
 	 */
 	if (joinrel->consider_parallel &&
@@ -1521,7 +1522,9 @@ match_unsorted_outer(PlannerInfo *root,
 		save_jointype != JOIN_FULL &&
 		save_jointype != JOIN_RIGHT &&
 		outerrel->partial_pathlist != NIL &&
-		bms_is_empty(joinrel->lateral_relids))
+		bms_is_empty(joinrel->lateral_relids) &&
+		bms_is_subset(innerrel->lateral_relids, outerrel->relids) &&
+		(bms_is_empty(outerrel->lateral_relids) || !bms_is_subset(outerrel->lateral_relids, innerrel->relids)))
 	{
 		if (nestjoinOK)
 			consider_parallel_nestloop(root, joinrel, outerrel, innerrel,
@@ -1635,7 +1638,8 @@ consider_parallel_nestloop(PlannerInfo *root,
 			Path	   *innerpath = (Path *) lfirst(lc2);
 
 			/* Can't join to an inner path that is not parallel-safe */
-			if (!innerpath->parallel_safe)
+			if (!innerpath->parallel_safe &&
+					!(innerpath->parallel_safe_except_params)) /* TODO: recheck parallel safety of params here? */
 				continue;
 
 			/*

@@ -756,10 +756,10 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 	CHECK_FOR_INTERRUPTS();
 
 	/* Path to be added must be parallel safe. */
-	Assert(new_path->parallel_safe);
+	Assert(new_path->parallel_safe || new_path->parallel_safe_except_params);
 
 	/* Relation should be OK for parallelism, too. */
-	Assert(parent_rel->consider_parallel);
+	Assert(parent_rel->consider_parallel || parent_rel->consider_parallel_rechecking_params);
 
 	/*
 	 * As in add_path, throw out any paths which are dominated by the new
@@ -1794,7 +1794,7 @@ create_gather_merge_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	Cost		input_startup_cost = 0;
 	Cost		input_total_cost = 0;
 
-	Assert(subpath->parallel_safe);
+	Assert(subpath->parallel_safe || subpath->parallel_safe_except_params);
 	Assert(pathkeys);
 
 	pathnode->path.pathtype = T_GatherMerge;
@@ -1882,7 +1882,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 {
 	GatherPath *pathnode = makeNode(GatherPath);
 
-	Assert(subpath->parallel_safe);
+	Assert(subpath->parallel_safe || subpath->parallel_safe_except_params);
 
 	pathnode->path.pathtype = T_Gather;
 	pathnode->path.parent = rel;
@@ -2348,6 +2348,8 @@ create_nestloop_path(PlannerInfo *root,
 	NestPath   *pathnode = makeNode(NestPath);
 	Relids		inner_req_outer = PATH_REQ_OUTER(inner_path);
 
+	/* TODO: Assert lateral relids subset safety? */
+
 	/*
 	 * If the inner path is parameterized by the outer, we must drop any
 	 * restrict_clauses that are due to be moved into the inner path.  We have
@@ -2388,6 +2390,8 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = joinrel->consider_parallel &&
 		outer_path->parallel_safe && inner_path->parallel_safe;
+	pathnode->path.parallel_safe_except_params = joinrel->consider_parallel_rechecking_params &&
+		outer_path->parallel_safe_except_params && inner_path->parallel_safe_except_params;
 	/* This is a foolish way to estimate parallel_workers, but for now... */
 	pathnode->path.parallel_workers = outer_path->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
