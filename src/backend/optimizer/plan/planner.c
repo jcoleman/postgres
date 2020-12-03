@@ -1903,8 +1903,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	 * Generate partial paths for final_rel, too, if outer query levels might
 	 * be able to make use of them.
 	 */
-	if (final_rel->consider_parallel && root->query_level > 1 &&
-		!limit_needed(parse))
+	if ((final_rel->consider_parallel || final_rel->consider_parallel_rechecking_params) &&
+		root->query_level > 1)
+		/* TODO: && !limit_needed(parse)) */
 	{
 		Assert(!parse->rowMarks && parse->commandType == CMD_SELECT);
 		foreach(lc, current_rel->partial_pathlist)
@@ -6959,9 +6960,10 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 		generate_useful_gather_paths(root, rel, false);
 
 		/* Can't use parallel query above this level. */
-		rel->partial_pathlist = NIL;
+		if (!rel->consider_parallel_rechecking_params)
+			rel->partial_pathlist = NIL;
 		rel->consider_parallel = false;
-		rel->consider_parallel_rechecking_params = false;
+		/* rel->consider_parallel_rechecking_params = false; */
 	}
 
 	/* Finish dropping old paths for a partitioned rel, per comment above */
