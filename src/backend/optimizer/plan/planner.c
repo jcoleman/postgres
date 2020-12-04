@@ -486,10 +486,23 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 			Plan	   *subplan = (Plan *) lfirst(lp);
 			PlannerInfo *subroot = lfirst_node(PlannerInfo, lr);
 
+			/*
+			 * Ensure that we don't get:
+			 *
+			 * ERROR: subplan "SubPlan 1" was not initialized.
+			 *
+			 * when the plan actually executes. For example:
+			 *
+			 * SELECT
+			 *   (SELECT t.unique1 FROM tenk1 WHERE tenk1.unique1 = t.unique1)
+			 * FROM tenk1 t
+			 * LIMIT 1;
+			 */
 			if (coerce_parallel_safe && !subplan->parallel_safe &&
 					subplan->parallel_safe_except_params)
 			{
-				/* TODO: We should probably figure out a way
+				/*
+				 * TODO: We should probably figure out a way
 				 * to determine if this is one of the subplans
 				 * we need for the parallel part of the plan.
 				 */
@@ -1315,7 +1328,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 		/* And check whether it's parallel safe */
 		final_target_parallel_safe =
-			is_parallel_safe_copy(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
+			is_parallel_safe(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
 
 		/* The setop result tlist couldn't contain any SRFs */
 		Assert(!parse->hasTargetSRFs);
@@ -1472,7 +1485,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 */
 		final_target = create_pathtarget(root, root->processed_tlist);
 		final_target_parallel_safe =
-			is_parallel_safe_copy(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
+			is_parallel_safe(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
 
 		/*
 		 * If ORDER BY was given, consider whether we should use a post-sort
@@ -1485,7 +1498,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 													   final_target,
 													   &have_postponed_srfs);
 			sort_input_target_parallel_safe =
-				is_parallel_safe_copy(root, (Node *) sort_input_target->exprs, &sort_input_target_parallel_safe_except_params);
+				is_parallel_safe(root, (Node *) sort_input_target->exprs, &sort_input_target_parallel_safe_except_params);
 		}
 		else
 		{
@@ -1505,7 +1518,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 													   final_target,
 													   activeWindows);
 			grouping_target_parallel_safe =
-				is_parallel_safe_copy(root, (Node *) grouping_target->exprs, &grouping_target_parallel_safe_except_params);
+				is_parallel_safe(root, (Node *) grouping_target->exprs, &grouping_target_parallel_safe_except_params);
 		}
 		else
 		{
@@ -1525,7 +1538,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			scanjoin_target = make_group_input_target(root, final_target);
 			scanjoin_target_parallel_safe =
-				is_parallel_safe_copy(root, (Node *) scanjoin_target->exprs, &scanjoin_target_parallel_safe_except_params);
+				is_parallel_safe(root, (Node *) scanjoin_target->exprs, &scanjoin_target_parallel_safe_except_params);
 		}
 		else
 		{
@@ -1691,8 +1704,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		bool		limit_count_parallel_safe_except_params = false;
 		bool		limit_offset_parallel_safe_except_params = false;
 
-		limit_count_parallel_safe = is_parallel_safe_copy(root, parse->limitCount, &limit_count_parallel_safe_except_params);
-		limit_offset_parallel_safe = is_parallel_safe_copy(root, parse->limitOffset, &limit_offset_parallel_safe_except_params);
+		limit_count_parallel_safe = is_parallel_safe(root, parse->limitCount, &limit_count_parallel_safe_except_params);
+		limit_offset_parallel_safe = is_parallel_safe(root, parse->limitOffset, &limit_offset_parallel_safe_except_params);
 
 		if (current_rel->consider_parallel &&
 				limit_count_parallel_safe &&
@@ -1904,7 +1917,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	 * be able to make use of them.
 	 */
 	if ((final_rel->consider_parallel || final_rel->consider_parallel_rechecking_params) &&
-		root->query_level > 1)
+		root->query_level > 1 && !limit_needed(parse))
 		/* TODO: && !limit_needed(parse)) */
 	{
 		Assert(!parse->rowMarks && parse->commandType == CMD_SELECT);
@@ -3466,7 +3479,7 @@ make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 		bool having_qual_parallel_safe;
 		bool having_qual_parallel_safe_except_params = false;
 
-		having_qual_parallel_safe = is_parallel_safe_copy(root, (Node *) havingQual,
+		having_qual_parallel_safe = is_parallel_safe(root, (Node *) havingQual,
 				&having_qual_parallel_safe_except_params);
 
 		grouped_rel->consider_parallel = input_rel->consider_parallel &&
@@ -4101,7 +4114,7 @@ create_window_paths(PlannerInfo *root,
 	 * target list and active windows for non-parallel-safe constructs.
 	 */
 	if (input_rel->consider_parallel && output_target_parallel_safe &&
-		is_parallel_safe(root, (Node *) activeWindows))
+		is_parallel_safe(root, (Node *) activeWindows, NULL))
 		window_rel->consider_parallel = true;
 
 	/*
@@ -5660,6 +5673,7 @@ adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
 			PathTarget *thistarget = lfirst_node(PathTarget, lc1);
 			bool		contains_srfs = (bool) lfirst_int(lc2);
 
+			/* TODO: How do we know the new target is parallel safe? */
 			/* If this level doesn't contain SRFs, do regular projection */
 			if (contains_srfs)
 				newpath = (Path *) create_set_projection_path(root,
@@ -5976,8 +5990,8 @@ plan_create_index_workers(Oid tableOid, Oid indexOid)
 	 * safe.
 	 */
 	if (heap->rd_rel->relpersistence == RELPERSISTENCE_TEMP ||
-		!is_parallel_safe(root, (Node *) RelationGetIndexExpressions(index)) ||
-		!is_parallel_safe(root, (Node *) RelationGetIndexPredicate(index)))
+		!is_parallel_safe(root, (Node *) RelationGetIndexExpressions(index), NULL) ||
+		!is_parallel_safe(root, (Node *) RelationGetIndexPredicate(index), NULL))
 	{
 		parallel_workers = 0;
 		goto done;
@@ -6960,10 +6974,67 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 		generate_useful_gather_paths(root, rel, false);
 
 		/* Can't use parallel query above this level. */
-		if (!rel->consider_parallel_rechecking_params)
-			rel->partial_pathlist = NIL;
+
+		/*
+		 * There are cases where:
+		 * (rel->consider_parallel &&
+		 *  !scanjoin_target_parallel_safe &&
+		 *  scanjoin_target_parallel_safe_except_params)
+		 * is true at this point. See longer commment below.
+		 */
+		if (!(rel->consider_parallel_rechecking_params && scanjoin_target_parallel_safe_except_params))
+		{
+			/*
+			 * TODO: if we limit this to this condition, we're pushing off the
+			 * checks as to whether or not a given param usage is safe in the
+			 * context of a given path (in the context of a given rel?). That
+			 * almost certainly means we'd have to add other checks later (maybe
+			 * just on lateral/relids and not parallel safety overall), because
+			 * at the end of grouping_planner() we copy partial paths to the
+			 * final_rel, and while that path may be acceptable in some contexts
+			 * it may not be in all contexts.
+			 *
+			 * OTOH if we're only dependent on PARAM_EXEC params, and we already
+			 * know that subpath->param_info == NULL holds (and that seems like
+			 * it must since we were going to replace the path target anyway...
+			 * though the one caveat is from the original form of this function
+			 * we'd only ever actually assert that for paths not partial paths)
+			 * then if a param shows up in the target why would be parallel
+			 * unsafe.
+			 *
+			 * Adding to the mystery even with the original form of this function
+			 * we still end up with parallel paths where I'd expect this to
+			 * disallow them. For example:
+			 *
+			 * SELECT '' AS six, f1 AS "Correlated Field", f3 AS "Second Field"
+			 * FROM SUBSELECT_TBL upper
+			 * WHERE f3 IN (
+			 *   SELECT upper.f1 + f2
+			 *   FROM SUBSELECT_TBL
+			 *   WHERE f2 = CAST(f3 AS integer)
+			 * );
+			 *
+			 * ends up with the correlated query underneath parallel plan despite
+			 * its target containing a param, and therefore this function marking
+			 * the rel as consider_parallel=false and removing the partial paths.
+			 *
+			 * Interestingly that query sample does not rely on coerce_parallel_safe.
+			 * But the plan as a whole is parallel safe, and so the subplan is also
+			 * parallel safe, which means we can incorporate it into a full parallel
+			 * plan. In other words, this is a parallel safe, but not parallel aware
+			 * subplan (and regular, not parallel, seq scan inside that subplan).
+			 * It's not a partial path; it'a a full path that is executed as a subquery.
+			 *
+			 * Current conclusion: it's fine for subplans, which is the case we're
+			 * currently targeting anyway. And it might even be the only case that
+			 * matters at all.
+			 */
+			/* rel->consider_parallel_rechecking_params = false; */
+			/* rel->partial_pathlist = NIL; */
+		}
+		rel->consider_parallel_rechecking_params = false;
+		rel->partial_pathlist = NIL;
 		rel->consider_parallel = false;
-		/* rel->consider_parallel_rechecking_params = false; */
 	}
 
 	/* Finish dropping old paths for a partitioned rel, per comment above */
@@ -7112,6 +7183,11 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 	 * avoid creating multiple Gather nodes within the same plan. We must do
 	 * this after all paths have been generated and before set_cheapest, since
 	 * one of the generated paths may turn out to be the cheapest one.
+	 *
+	 * TODO: This is the same problem as earlier in this function: we're (if
+	 * we're allowing "parallel safe except params") generating paths here we
+	 * actually know are safe in any context just possibly safe in the context
+	 * of the right rel.
 	 */
 	if (rel->consider_parallel && !IS_OTHER_REL(rel))
 		generate_useful_gather_paths(root, rel, false);

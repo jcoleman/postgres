@@ -2641,7 +2641,8 @@ create_projection_path(PlannerInfo *root,
 {
 	ProjectionPath *pathnode = makeNode(ProjectionPath);
 	PathTarget *oldtarget = subpath->pathtarget;
-	bool parallel_safe_except_params;
+	bool target_parallel_safe;
+	bool target_parallel_safe_except_params = false;
 
 	pathnode->path.pathtype = T_Result;
 	pathnode->path.parent = rel;
@@ -2649,12 +2650,12 @@ create_projection_path(PlannerInfo *root,
 	/* For now, assume we are above any joins, so no parameterization */
 	pathnode->path.param_info = NULL;
 	pathnode->path.parallel_aware = false;
+	target_parallel_safe = is_parallel_safe(root, (Node *) target->exprs,
+			&target_parallel_safe_except_params);
 	pathnode->path.parallel_safe = rel->consider_parallel &&
-		subpath->parallel_safe &&
-		is_parallel_safe(root, (Node *) target->exprs);
-	is_parallel_safe_copy(root, (Node *) target->exprs, &parallel_safe_except_params);
+		subpath->parallel_safe && target_parallel_safe;
 	pathnode->path.parallel_safe_except_params = rel->consider_parallel_rechecking_params &&
-		subpath->parallel_safe_except_params && parallel_safe_except_params;
+		subpath->parallel_safe_except_params && target_parallel_safe_except_params;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Projection does not change the sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
@@ -2761,7 +2762,7 @@ apply_projection_to_path(PlannerInfo *root,
 	 * parallel-safe in the target expressions, then we can't.
 	 */
 	if ((IsA(path, GatherPath) || IsA(path, GatherMergePath)) &&
-		is_parallel_safe(root, (Node *) target->exprs))
+		is_parallel_safe(root, (Node *) target->exprs, NULL))
 	{
 		/*
 		 * We always use create_projection_path here, even if the subpath is
@@ -2795,7 +2796,7 @@ apply_projection_to_path(PlannerInfo *root,
 		}
 	}
 	else if (path->parallel_safe &&
-			 !is_parallel_safe(root, (Node *) target->exprs))
+			 !is_parallel_safe(root, (Node *) target->exprs, NULL))
 	{
 		/*
 		 * We're inserting a parallel-restricted target list into a path
@@ -2803,6 +2804,7 @@ apply_projection_to_path(PlannerInfo *root,
 		 * safe.
 		 */
 		path->parallel_safe = false;
+		path->parallel_safe_except_params = false; /* TODO */
 	}
 
 	return path;
@@ -2835,7 +2837,7 @@ create_set_projection_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe &&
-		is_parallel_safe(root, (Node *) target->exprs);
+		is_parallel_safe(root, (Node *) target->exprs, NULL);
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Projection does not change the sort order XXX? */
 	pathnode->path.pathkeys = subpath->pathkeys;

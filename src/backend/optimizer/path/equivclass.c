@@ -838,7 +838,7 @@ find_em_expr_usable_for_sorting_rel(PlannerInfo *root, EquivalenceClass *ec,
 		/*
 		 * If requested, reject expressions that are not parallel-safe.
 		 */
-		if (require_parallel_safe && !is_parallel_safe(root, (Node *) em_expr))
+		if (require_parallel_safe && !is_parallel_safe(root, (Node *) em_expr, NULL))
 			continue;
 
 		/*

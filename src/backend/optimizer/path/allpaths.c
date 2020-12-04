@@ -593,9 +593,8 @@ static void
 set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 						  RangeTblEntry *rte)
 {
-	bool found_hazard = false;
+	bool found_hazard;
 	bool found_hazard_only_in_params = true;
-	bool safe_except_params;
 	rel->consider_parallel_rechecking_params = false;
 	/*
 	 * The flag has previously been initialized to false, so we can just
@@ -637,7 +636,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 				if (proparallel != PROPARALLEL_SAFE)
 					return;
-				if (!is_parallel_safe(root, (Node *) rte->tablesample->args))
+				if (!is_parallel_safe(root, (Node *) rte->tablesample->args, NULL))
 					return;
 			}
 
@@ -705,7 +704,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 		case RTE_FUNCTION:
 			/* Check for parallel-restricted functions. */
-			if (!is_parallel_safe(root, (Node *) rte->functions))
+			if (!is_parallel_safe(root, (Node *) rte->functions, NULL))
 				return;
 			break;
 
@@ -715,7 +714,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 		case RTE_VALUES:
 			/* Check for parallel-restricted functions. */
-			if (!is_parallel_safe(root, (Node *) rte->values_lists))
+			if (!is_parallel_safe(root, (Node *) rte->values_lists, NULL))
 				return;
 			break;
 
@@ -752,20 +751,25 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 	 * outer join clauses work correctly.  It would likely break equivalence
 	 * classes, too.
 	 */
-	found_hazard = found_hazard || !is_parallel_safe_copy(root, (Node *) rel->baserestrictinfo, &safe_except_params);
-	found_hazard_only_in_params = found_hazard_only_in_params && safe_except_params;
-	/* if (!is_parallel_safe(root, (Node *) rel->baserestrictinfo)) */
-	/* 	return; */
+	found_hazard = !is_parallel_safe(root, (Node *) rel->baserestrictinfo,
+			&found_hazard_only_in_params);
 
 	/*
 	 * Likewise, if the relation's outputs are not parallel-safe, give up.
 	 * (Usually, they're just Vars, but sometimes they're not.)
 	 */
-	found_hazard = found_hazard || !is_parallel_safe_copy(root, (Node *) rel->reltarget->exprs, &safe_except_params);
-	found_hazard_only_in_params = found_hazard_only_in_params && safe_except_params;
-	/* if (!is_parallel_safe(root, (Node *) rel->baserestrictinfo)) */
-	/* if (!is_parallel_safe(root, (Node *) rel->reltarget->exprs)) */
-	/* 	return; */
+	if (!found_hazard || !found_hazard_only_in_params)
+	{
+		bool target_parallel_safe;
+		bool target_parallel_safe_except_params = false;
+
+		target_parallel_safe = is_parallel_safe(root,
+				(Node *) rel->reltarget->exprs,
+				&target_parallel_safe_except_params);
+		found_hazard = found_hazard || !target_parallel_safe;
+		found_hazard_only_in_params = found_hazard_only_in_params
+			&& target_parallel_safe_except_params;
+	}
 
 	if (!found_hazard)
 	{
@@ -774,9 +778,6 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 	}
 	else if (found_hazard_only_in_params)
 		rel->consider_parallel_rechecking_params = true;
-
-	/* We have a winner. */
-	/* rel->consider_parallel = true; */
 }
 
 /*
@@ -2296,7 +2297,6 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	}
 
 	/* If outer rel allows parallelism, do same for partial paths. */
-	/* TODO: consider parallel_safe_except_params? */
 	if (rel->consider_parallel || rel->consider_parallel_rechecking_params)
 	{
 		bool required_outer_empty = bms_is_empty(required_outer);
@@ -2315,7 +2315,7 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 			if (known_safe ||
 					(sub_final_rel->consider_parallel_rechecking_params))
-					 /* && is_parallel_safe... */
+					 /* TODO: && is_parallel_safe... */
 			{
 					/* Convert subpath's pathkeys to outer representation */
 				pathkeys = convert_subquery_pathkeys(root,
