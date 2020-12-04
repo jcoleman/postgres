@@ -353,7 +353,7 @@ explain (costs off, verbose) select
                  Index Cond: (tenk1.unique1 = t.unique1)
 (9 rows)
 
-explain (analyze, costs off, verbose, timing off) select
+explain (analyze, costs off, summary off, verbose, timing off) select
   (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1)
   from tenk1 t
   limit 1;
@@ -381,9 +381,7 @@ explain (analyze, costs off, verbose, timing off) select
                        Worker 1:  actual rows=1 loops=1
                        Worker 2:  actual rows=1 loops=1
                        Worker 3:  actual rows=1 loops=1
- Planning Time: 0.233 ms
- Execution Time: 7.467 ms
-(24 rows)
+(22 rows)
 
 explain (costs off, verbose) select t.unique1
   from tenk1 t
@@ -402,7 +400,25 @@ explain (costs off, verbose) select t.unique1
                  Index Cond: (tenk1.unique1 = t.unique1)
 (10 rows)
 
--- TODO: test subplan in join/lateral join
+explain (costs off, verbose) select t.unique1
+  from tenk1 t
+  join lateral (
+    select t.unique1 from tenk1 where tenk1.unique1 = t.unique1 offset 0
+  ) l on true;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Gather
+   Output: t.unique1
+   Workers Planned: 4
+   ->  Nested Loop
+         Output: t.unique1
+         ->  Parallel Index Only Scan using tenk1_unique1 on public.tenk1 t
+               Output: t.unique1
+         ->  Index Only Scan using tenk1_unique1 on public.tenk1
+               Output: NULL::integer
+               Index Cond: (tenk1.unique1 = t.unique1)
+(10 rows)
+
 -- this is not parallel-safe due to use of random() within SubLink's testexpr:
 explain (costs off)
 	select * from tenk1 where (unique1 + random())::integer not in
