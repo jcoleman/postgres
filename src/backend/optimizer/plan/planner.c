@@ -2431,7 +2431,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 	 * be able to make use of them.
 	 */
 	if ((final_rel->consider_parallel || final_rel->consider_parallel_rechecking_params) &&
-		root->query_level > 1)
+		root->query_level > 1 && !limit_needed(parse))
 		/* TODO: && !limit_needed(parse)) */
 	{
 		Assert(!parse->rowMarks && parse->commandType == CMD_SELECT);
@@ -6181,6 +6181,7 @@ adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
 			PathTarget *thistarget = lfirst_node(PathTarget, lc1);
 			bool		contains_srfs = (bool) lfirst_int(lc2);
 
+			/* TODO: How do we know the new target is parallel safe? */
 			/* If this level doesn't contain SRFs, do regular projection */
 			if (contains_srfs)
 				newpath = (Path *) create_set_projection_path(root,
@@ -7485,10 +7486,14 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 		generate_useful_gather_paths(root, rel, false);
 
 		/* Can't use parallel query above this level. */
-		if (!rel->consider_parallel_rechecking_params)
+		if (!rel->consider_parallel_rechecking_params && !scanjoin_target_parallel_safe_except_params)
+		{
+			rel->consider_parallel_rechecking_params = false;
 			rel->partial_pathlist = NIL;
+		}
+		rel->consider_parallel_rechecking_params = false;
+		rel->partial_pathlist = NIL;
 		rel->consider_parallel = false;
-		/* rel->consider_parallel_rechecking_params = false; */
 	}
 
 	/* Finish dropping old paths for a partitioned rel, per comment above */

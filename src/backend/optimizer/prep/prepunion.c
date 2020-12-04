@@ -408,6 +408,7 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 				Assert(subpath->param_info == NULL);
 
 				/* avoid apply_projection_to_path, in case of multiple refs */
+				/* TODO: how to we know the target is parallel safe? */
 				path = (Path *) create_projection_path(root, subpath->parent,
 													   subpath, target);
 				lfirst(lc) = path;
