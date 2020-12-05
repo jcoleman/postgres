@@ -490,10 +490,23 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 			Plan	   *subplan = (Plan *) lfirst(lp);
 			PlannerInfo *subroot = lfirst_node(PlannerInfo, lr);
 
+			/*
+			 * Ensure that we don't get:
+			 *
+			 * ERROR: subplan "SubPlan 1" was not initialized.
+			 *
+			 * when the plan actually executes. For example:
+			 *
+			 * SELECT
+			 *   (SELECT t.unique1 FROM tenk1 WHERE tenk1.unique1 = t.unique1)
+			 * FROM tenk1 t
+			 * LIMIT 1;
+			 */
 			if (coerce_parallel_safe && !subplan->parallel_safe &&
 					subplan->parallel_safe_except_params)
 			{
-				/* TODO: We should probably figure out a way
+				/*
+				 * TODO: We should probably figure out a way
 				 * to determine if this is one of the subplans
 				 * we need for the parallel part of the plan.
 				 */
@@ -7486,10 +7499,63 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 		generate_useful_gather_paths(root, rel, false);
 
 		/* Can't use parallel query above this level. */
-		if (!rel->consider_parallel_rechecking_params && !scanjoin_target_parallel_safe_except_params)
+
+		/*
+		 * There are cases where:
+		 * (rel->consider_parallel &&
+		 *  !scanjoin_target_parallel_safe &&
+		 *  scanjoin_target_parallel_safe_except_params)
+		 * is true at this point. See longer commment below.
+		 */
+		if (!(rel->consider_parallel_rechecking_params && scanjoin_target_parallel_safe_except_params))
 		{
-			rel->consider_parallel_rechecking_params = false;
-			rel->partial_pathlist = NIL;
+			/*
+			 * TODO: if we limit this to this condition, we're pushing off the
+			 * checks as to whether or not a given param usage is safe in the
+			 * context of a given path (in the context of a given rel?). That
+			 * almost certainly means we'd have to add other checks later (maybe
+			 * just on lateral/relids and not parallel safety overall), because
+			 * at the end of grouping_planner() we copy partial paths to the
+			 * final_rel, and while that path may be acceptable in some contexts
+			 * it may not be in all contexts.
+			 *
+			 * OTOH if we're only dependent on PARAM_EXEC params, and we already
+			 * know that subpath->param_info == NULL holds (and that seems like
+			 * it must since we were going to replace the path target anyway...
+			 * though the one caveat is from the original form of this function
+			 * we'd only ever actually assert that for paths not partial paths)
+			 * then if a param shows up in the target why would be parallel
+			 * unsafe.
+			 *
+			 * Adding to the mystery even with the original form of this function
+			 * we still end up with parallel paths where I'd expect this to
+			 * disallow them. For example:
+			 *
+			 * SELECT '' AS six, f1 AS "Correlated Field", f3 AS "Second Field"
+			 * FROM SUBSELECT_TBL upper
+			 * WHERE f3 IN (
+			 *   SELECT upper.f1 + f2
+			 *   FROM SUBSELECT_TBL
+			 *   WHERE f2 = CAST(f3 AS integer)
+			 * );
+			 *
+			 * ends up with the correlated query underneath parallel plan despite
+			 * its target containing a param, and therefore this function marking
+			 * the rel as consider_parallel=false and removing the partial paths.
+			 *
+			 * Interestingly that query sample does not rely on coerce_parallel_safe.
+			 * But the plan as a whole is parallel safe, and so the subplan is also
+			 * parallel safe, which means we can incorporate it into a full parallel
+			 * plan. In other words, this is a parallel safe, but not parallel aware
+			 * subplan (and regular, not parallel, seq scan inside that subplan).
+			 * It's not a partial path; it'a a full path that is executed as a subquery.
+			 *
+			 * Current conclusion: it's fine for subplans, which is the case we're
+			 * currently targeting anyway. And it might even be the only case that
+			 * matters at all.
+			 */
+			/* rel->consider_parallel_rechecking_params = false; */
+			/* rel->partial_pathlist = NIL; */
 		}
 		rel->consider_parallel_rechecking_params = false;
 		rel->partial_pathlist = NIL;
@@ -7642,6 +7708,11 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 	 * avoid creating multiple Gather nodes within the same plan. We must do
 	 * this after all paths have been generated and before set_cheapest, since
 	 * one of the generated paths may turn out to be the cheapest one.
+	 *
+	 * TODO: This is the same problem as earlier in this function: we're (if
+	 * we're allowing "parallel safe except params") generating paths here we
+	 * actually know are safe in any context just possibly safe in the context
+	 * of the right rel.
 	 */
 	if (rel->consider_parallel && !IS_OTHER_REL(rel))
 		generate_useful_gather_paths(root, rel, false);
