@@ -96,7 +96,8 @@ typedef struct
 	char		max_hazard;		/* worst proparallel hazard found so far */
 	char		max_interesting;	/* worst proparallel hazard of interest */
 	/* char max_hazard_from_params; */
-	char max_hazard_ignoring_params;
+	char		max_hazard_ignoring_params;
+	bool		check_params_independently;
 	List	   *safe_param_ids; /* PARAM_EXEC Param IDs to treat as safe */
 } max_parallel_hazard_context;
 
@@ -842,6 +843,7 @@ max_parallel_hazard(Query *parse)
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_UNSAFE;
 	context.safe_param_ids = NIL;
+	context.check_params_independently = false;
 	(void) max_parallel_hazard_walker((Node *) parse, &context);
 	return context.max_hazard;
 }
@@ -873,6 +875,7 @@ is_parallel_safe(PlannerInfo *root, Node *node)
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_RESTRICTED;
 	context.safe_param_ids = NIL;
+	context.check_params_independently = false;
 
 	/*
 	 * The params that refer to the same or parent query level are considered
@@ -899,7 +902,6 @@ is_parallel_safe_copy(PlannerInfo *root, Node *node, bool *safe_except_params)
 	max_parallel_hazard_context context;
 	PlannerInfo *proot;
 	ListCell   *l;
-	bool found_hazard;
 
 	/*
 	 * Even if the original querytree contained nothing unsafe, we need to
@@ -915,6 +917,7 @@ is_parallel_safe_copy(PlannerInfo *root, Node *node, bool *safe_except_params)
 	context.max_hazard_ignoring_params = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_RESTRICTED;
 	context.safe_param_ids = NIL;
+	context.check_params_independently = safe_except_params != NULL;
 
 	/*
 	 * The params that refer to the same or parent query level are considered
@@ -932,11 +935,12 @@ is_parallel_safe_copy(PlannerInfo *root, Node *node, bool *safe_except_params)
 		}
 	}
 
-	found_hazard = max_parallel_hazard_walker(node, &context);
+	(void) max_parallel_hazard_walker(node, &context);
 
-	*safe_except_params = context.max_hazard_ignoring_params == PROPARALLEL_SAFE;
+	if (safe_except_params)
+		*safe_except_params = context.max_hazard_ignoring_params == PROPARALLEL_SAFE;
 
-	return !found_hazard;
+	return context.max_hazard == PROPARALLEL_SAFE;
 }
 
 /* core logic for all parallel-hazard checks */
@@ -980,6 +984,40 @@ max_parallel_hazard_checker(Oid func_id, void *context)
 }
 
 static bool
+max_parallel_hazard_walker_can_short_circuit(max_parallel_hazard_context *context)
+{
+	if (!context->check_params_independently)
+		return true;
+
+	switch (context->max_hazard)
+	{
+		case PROPARALLEL_SAFE:
+			/* nothing to see here, move along */
+			break;
+		case PROPARALLEL_RESTRICTED:
+			if (context->max_interesting == PROPARALLEL_RESTRICTED)
+				return context->max_hazard_ignoring_params != PROPARALLEL_SAFE;
+
+			/*
+			 * We haven't even met our max interesting yet, so
+			 * we certainly can't short-circuit.
+			 */
+			break;
+		case PROPARALLEL_UNSAFE:
+			if (context->max_interesting == PROPARALLEL_RESTRICTED)
+				return context->max_hazard_ignoring_params != PROPARALLEL_SAFE;
+			else if (context->max_interesting == PROPARALLEL_UNSAFE)
+				return context->max_hazard_ignoring_params == PROPARALLEL_UNSAFE;
+
+			break;
+		default:
+			elog(ERROR, "unrecognized proparallel value \"%c\"", context->max_hazard);
+			break;
+	}
+	return false;
+}
+
+static bool
 max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 {
 	if (node == NULL)
@@ -988,7 +1026,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	/* Check for hazardous functions in node itself */
 	if (check_functions_in_node(node, max_parallel_hazard_checker,
 								context))
-		return true;
+		return max_parallel_hazard_walker_can_short_circuit(context);
 
 	/*
 	 * It should be OK to treat MinMaxExpr as parallel-safe, since btree
@@ -1004,13 +1042,13 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	if (IsA(node, CoerceToDomain))
 	{
 		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
-			return true;
+			return max_parallel_hazard_walker_can_short_circuit(context);
 	}
 
 	else if (IsA(node, NextValueExpr))
 	{
 		if (max_parallel_hazard_test(PROPARALLEL_UNSAFE, context, false))
-			return true;
+			return max_parallel_hazard_walker_can_short_circuit(context);
 	}
 
 	/*
@@ -1024,7 +1062,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	else if (IsA(node, WindowFunc))
 	{
 		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
-			return true;
+			return max_parallel_hazard_walker_can_short_circuit(context);
 	}
 
 	/*
@@ -1044,7 +1082,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	else if (IsA(node, SubLink))
 	{
 		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
-			return true;
+			return max_parallel_hazard_walker_can_short_circuit(context);
 	}
 
 	/*
@@ -1060,18 +1098,22 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 
 		if (!subplan->parallel_safe &&
 			(!enable_parallel_params_recheck || !subplan->parallel_safe_except_params) &&
-			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false))
+			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false) &&
+			max_parallel_hazard_walker_can_short_circuit(context))
 			return true;
 		save_safe_param_ids = context->safe_param_ids;
 		context->safe_param_ids = list_concat_copy(context->safe_param_ids,
 												   subplan->paramIds);
-		if (max_parallel_hazard_walker(subplan->testexpr, context))
-			return true;		/* no need to restore safe_param_ids */
+		if (max_parallel_hazard_walker(subplan->testexpr, context) &&
+			max_parallel_hazard_walker_can_short_circuit(context))
+			/* no need to restore safe_param_ids */
+			return true;
+
 		list_free(context->safe_param_ids);
 		context->safe_param_ids = save_safe_param_ids;
 		/* we must also check args, but no special Param treatment there */
 		if (max_parallel_hazard_walker((Node *) subplan->args, context))
-			return true;
+			return max_parallel_hazard_walker_can_short_circuit(context);
 		/* don't want to recurse normally, so we're done */
 		return false;
 	}
@@ -1093,9 +1135,8 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		if (param->paramkind != PARAM_EXEC ||
 			!list_member_int(context->safe_param_ids, param->paramid))
 		{
-			/* TODO: can't short circuit here anymore? */
 			if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, true))
-				return true;
+				return max_parallel_hazard_walker_can_short_circuit(context);
 		}
 		return false;			/* nothing to recurse to */
 	}
@@ -1113,7 +1154,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		if (query->rowMarks != NULL)
 		{
 			context->max_hazard = PROPARALLEL_UNSAFE;
-			return true;
+			return max_parallel_hazard_walker_can_short_circuit(context);
 		}
 
 		/* Recurse into subselects */
