@@ -835,7 +835,7 @@ find_em_expr_usable_for_sorting_rel(PlannerInfo *root, EquivalenceClass *ec, Rel
 		if (!bms_is_subset(em->em_relids, rel->relids))
 			continue;
 
-		if (parallel && !is_parallel_safe(root, (Node *) em_expr))
+		if (parallel && !is_parallel_safe(root, (Node *) em_expr, NULL))
 			continue;
 
 		/*

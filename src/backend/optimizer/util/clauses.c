@@ -848,56 +848,8 @@ max_parallel_hazard(Query *parse)
 	return context.max_hazard;
 }
 
-/*
- * is_parallel_safe
- *		Detect whether the given expr contains only parallel-safe functions
- *
- * root->glob->maxParallelHazard must previously have been set to the
- * result of max_parallel_hazard() on the whole query.
- */
 bool
-is_parallel_safe(PlannerInfo *root, Node *node)
-{
-	max_parallel_hazard_context context;
-	PlannerInfo *proot;
-	ListCell   *l;
-
-	/*
-	 * Even if the original querytree contained nothing unsafe, we need to
-	 * search the expression if we have generated any PARAM_EXEC Params while
-	 * planning, because those are parallel-restricted and there might be one
-	 * in this expression.  But otherwise we don't need to look.
-	 */
-	if (root->glob->maxParallelHazard == PROPARALLEL_SAFE &&
-		root->glob->paramExecTypes == NIL)
-		return true;
-	/* Else use max_parallel_hazard's search logic, but stop on RESTRICTED */
-	context.max_hazard = PROPARALLEL_SAFE;
-	context.max_interesting = PROPARALLEL_RESTRICTED;
-	context.safe_param_ids = NIL;
-	context.check_params_independently = false;
-
-	/*
-	 * The params that refer to the same or parent query level are considered
-	 * parallel-safe.  The idea is that we compute such params at Gather or
-	 * Gather Merge node and pass their value to workers.
-	 */
-	for (proot = root; proot != NULL; proot = proot->parent_root)
-	{
-		foreach(l, proot->init_plans)
-		{
-			SubPlan    *initsubplan = (SubPlan *) lfirst(l);
-
-			context.safe_param_ids = list_concat(context.safe_param_ids,
-												 initsubplan->setParam);
-		}
-	}
-
-	return !max_parallel_hazard_walker(node, &context);
-}
-
-bool
-is_parallel_safe_copy(PlannerInfo *root, Node *node, bool *safe_except_params)
+is_parallel_safe(PlannerInfo *root, Node *node, bool *safe_except_params)
 {
 	max_parallel_hazard_context context;
 	PlannerInfo *proot;

@@ -1931,7 +1931,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 
 		/* And check whether it's parallel safe */
 		final_target_parallel_safe =
-			is_parallel_safe_copy(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
+			is_parallel_safe(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
 
 		/* The setop result tlist couldn't contain any SRFs */
 		Assert(!parse->hasTargetSRFs);
@@ -2098,7 +2098,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		 */
 		final_target = create_pathtarget(root, root->processed_tlist);
 		final_target_parallel_safe =
-			is_parallel_safe_copy(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
+			is_parallel_safe(root, (Node *) final_target->exprs, &final_target_parallel_safe_except_params);
 
 		/*
 		 * If ORDER BY was given, consider whether we should use a post-sort
@@ -2111,7 +2111,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 													   final_target,
 													   &have_postponed_srfs);
 			sort_input_target_parallel_safe =
-				is_parallel_safe_copy(root, (Node *) sort_input_target->exprs, &sort_input_target_parallel_safe_except_params);
+				is_parallel_safe(root, (Node *) sort_input_target->exprs, &sort_input_target_parallel_safe_except_params);
 		}
 		else
 		{
@@ -2131,7 +2131,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 													   final_target,
 													   activeWindows);
 			grouping_target_parallel_safe =
-				is_parallel_safe_copy(root, (Node *) grouping_target->exprs, &grouping_target_parallel_safe_except_params);
+				is_parallel_safe(root, (Node *) grouping_target->exprs, &grouping_target_parallel_safe_except_params);
 		}
 		else
 		{
@@ -2151,7 +2151,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		{
 			scanjoin_target = make_group_input_target(root, final_target);
 			scanjoin_target_parallel_safe =
-				is_parallel_safe_copy(root, (Node *) scanjoin_target->exprs, &scanjoin_target_parallel_safe_except_params);
+				is_parallel_safe(root, (Node *) scanjoin_target->exprs, &scanjoin_target_parallel_safe_except_params);
 		}
 		else
 		{
@@ -2318,8 +2318,8 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		bool		limit_count_parallel_safe_except_params = false;
 		bool		limit_offset_parallel_safe_except_params = false;
 
-		limit_count_parallel_safe = is_parallel_safe_copy(root, parse->limitCount, &limit_count_parallel_safe_except_params);
-		limit_offset_parallel_safe = is_parallel_safe_copy(root, parse->limitOffset, &limit_offset_parallel_safe_except_params);
+		limit_count_parallel_safe = is_parallel_safe(root, parse->limitCount, &limit_count_parallel_safe_except_params);
+		limit_offset_parallel_safe = is_parallel_safe(root, parse->limitOffset, &limit_offset_parallel_safe_except_params);
 
 		if (current_rel->consider_parallel &&
 				limit_count_parallel_safe &&
@@ -4002,7 +4002,7 @@ make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 		bool having_qual_parallel_safe;
 		bool having_qual_parallel_safe_except_params = false;
 
-		having_qual_parallel_safe = is_parallel_safe_copy(root, (Node *) havingQual,
+		having_qual_parallel_safe = is_parallel_safe(root, (Node *) havingQual,
 				&having_qual_parallel_safe_except_params);
 
 		grouped_rel->consider_parallel = input_rel->consider_parallel &&
@@ -4635,7 +4635,7 @@ create_window_paths(PlannerInfo *root,
 	 * target list and active windows for non-parallel-safe constructs.
 	 */
 	if (input_rel->consider_parallel && output_target_parallel_safe &&
-		is_parallel_safe(root, (Node *) activeWindows))
+		is_parallel_safe(root, (Node *) activeWindows, NULL))
 		window_rel->consider_parallel = true;
 
 	/*
@@ -6508,8 +6508,8 @@ plan_create_index_workers(Oid tableOid, Oid indexOid)
 	 * safe.
 	 */
 	if (heap->rd_rel->relpersistence == RELPERSISTENCE_TEMP ||
-		!is_parallel_safe(root, (Node *) RelationGetIndexExpressions(index)) ||
-		!is_parallel_safe(root, (Node *) RelationGetIndexPredicate(index)))
+		!is_parallel_safe(root, (Node *) RelationGetIndexExpressions(index), NULL) ||
+		!is_parallel_safe(root, (Node *) RelationGetIndexPredicate(index), NULL))
 	{
 		parallel_workers = 0;
 		goto done;

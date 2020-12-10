@@ -749,8 +749,8 @@ build_join_rel(PlannerInfo *root,
 		bool target_parallel_safe;
 		bool target_parallel_safe_except_params = false;
 
-		restrictlist_parallel_safe = is_parallel_safe_copy(root, (Node *) restrictlist, &restrictlist_parallel_safe_except_params);
-		target_parallel_safe = is_parallel_safe_copy(root, (Node *) joinrel->reltarget->exprs, &target_parallel_safe_except_params);
+		restrictlist_parallel_safe = is_parallel_safe(root, (Node *) restrictlist, &restrictlist_parallel_safe_except_params);
+		target_parallel_safe = is_parallel_safe(root, (Node *) joinrel->reltarget->exprs, &target_parallel_safe_except_params);
 
 		if (inner_rel->consider_parallel && outer_rel->consider_parallel
 				&& restrictlist_parallel_safe && target_parallel_safe)
@@ -762,12 +762,6 @@ build_join_rel(PlannerInfo *root,
 				&& target_parallel_safe_except_params)
 			joinrel->consider_parallel_rechecking_params = true;
 	}
-
-    /*  */
-	/* if (inner_rel->consider_parallel && outer_rel->consider_parallel && */
-	/* 	is_parallel_safe(root, (Node *) restrictlist) && */
-	/* 	is_parallel_safe(root, (Node *) joinrel->reltarget->exprs)) */
-	/* 	joinrel->consider_parallel = true; */
 
 	/* Add the joinrel to the PlannerInfo. */
 	add_join_rel(root, joinrel);
