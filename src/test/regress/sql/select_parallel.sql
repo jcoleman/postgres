@@ -131,11 +131,11 @@ explain (costs off, verbose) select t.unique1
   where t.unique1 = (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1);
 -- TODO: test subplan in join/lateral join
 -- the below doesn't qualify as there's no subplan.
--- explain (costs off, verbose) select t.unique1
---   from tenk1 t
---   join lateral (
---     select t.unique1 from tenk1 where tenk1.unique1 = t.unique1 offset 0
---   ) l on true;
+explain (costs off, verbose) select t.unique1, l.*
+  from tenk1 t
+  join lateral (
+    select (select t.unique1 from tenk1 where tenk1.unique1 = t.unique1 offset 0)
+  ) l on true;
 -- this is not parallel-safe due to use of random() within SubLink's testexpr:
 explain (costs off)
 	select * from tenk1 where (unique1 + random())::integer not in
