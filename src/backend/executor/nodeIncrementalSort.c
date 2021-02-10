@@ -345,8 +345,6 @@ switchToPresortedPrefixMode(PlanState *pstate)
 	 */
 	for (;;)
 	{
-		lastTuple = node->n_fullsort_remaining - nTuples == 1;
-
 		/*
 		 * When we encounter multiple prefix key groups inside the full sort
 		 * tuplesort we have to carry over the last read tuple into the next
@@ -395,17 +393,12 @@ switchToPresortedPrefixMode(PlanState *pstate)
 				 */
 				ExecClearTuple(node->group_pivot);
 
-				/*
-				 * Also make sure we take the didn't-consume-all-the-tuples
-				 * path below, even if this happened to be the last tuple of
-				 * the batch.
-				 */
-				lastTuple = false;
 				break;
 			}
 		}
 
 		firstTuple = false;
+		lastTuple = node->n_fullsort_remaining - nTuples == 0;
 
 		/*
 		 * If we've copied all of the tuples from the full sort state into the
