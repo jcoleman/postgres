@@ -2523,6 +2523,16 @@ _readPlanRowMark(void)
 	READ_DONE();
 }
 
+static HashedScalarArrayOpExpr *
+_readHashedScalarArrayOpExpr(void)
+{
+	READ_LOCALS(HashedScalarArrayOpExpr);
+
+	READ_NODE_FIELD(saop);
+
+	READ_DONE();
+}
+
 static PartitionPruneInfo *
 _readPartitionPruneInfo(void)
 {
@@ -2949,6 +2959,8 @@ parseNodeString(void)
 		return_value = _readNestLoopParam();
 	else if (MATCH("PLANROWMARK", 11))
 		return_value = _readPlanRowMark();
+	else if (MATCH("HASHEDSCALARARRAYOPEXPR", 23))
+		return_value = _readHashedScalarArrayOpExpr();
 	else if (MATCH("PARTITIONPRUNEINFO", 18))
 		return_value = _readPartitionPruneInfo();
 	else if (MATCH("PARTITIONEDRELPRUNEINFO", 23))

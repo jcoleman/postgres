@@ -106,6 +106,7 @@ static bool contain_leaked_vars_walker(Node *node, void *context);
 static Relids find_nonnullable_rels_walker(Node *node, bool top_level);
 static List *find_nonnullable_vars_walker(Node *node, bool top_level);
 static bool is_strict_saop(ScalarArrayOpExpr *expr, bool falseOK);
+static Node *convert_saop_to_hashed_saop_mutator(Node *node, void *context);
 static Node *eval_const_expressions_mutator(Node *node,
 											eval_const_expressions_context *context);
 static bool contain_non_const_walker(Node *node, void *context);
@@ -2100,6 +2101,75 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	context.estimate = false;	/* safe transformations only */
 	return eval_const_expressions_mutator(node, &context);
 }
+
+#define MIN_ARRAY_SIZE_FOR_HASHED_SAOP 9
+/*--------------------
+ * convert_saop_to_hashed_saop
+ *
+ * Recursively search 'node' for ScalarArrayOpExprs and convert any eligible
+ * ScalarArrayOpExprs into HashedScalarArrayOpExpr.
+ *
+ * The ScalarArrayOpExpr is eligible for conversion if:
+ * 1. The 2nd argument of the array does not contain any Vars, Params or
+ *	  volatile functions.
+ * 2. There's valid hash function for the given type.
+ * 3. If the array contains enough elements for us to consider it to be
+ *	  worthwhile using the hashed version of ScalarArrayOpExprs rather than
+ *	  the traditional version.
+ */
+Node *
+convert_saop_to_hashed_saop(Node *node)
+{
+	return convert_saop_to_hashed_saop_mutator(node, NULL);
+}
+
+static Node *
+convert_saop_to_hashed_saop_mutator(Node *node, void *context)
+{
+	if (node == NULL)
+		return NULL;
+
+	if (IsA(node, ScalarArrayOpExpr))
+	{
+		ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) node;
+		Expr	   *arrayarg = (Expr *) lsecond(saop->args);
+
+		if (saop->useOr && arrayarg && IsA(arrayarg, Const) &&
+			!((Const *) arrayarg)->constisnull &&
+			op_hashjoinable(saop->opno, exprType((Node *) arrayarg)))
+		{
+			Datum		arrdatum = ((Const *) arrayarg)->constvalue;
+			ArrayType  *arr = (ArrayType *) DatumGetPointer(arrdatum);
+			int			nitems;
+
+			/*
+			 * Only do the conversion if we have a large enough array to make
+			 * hashing worthwhile.
+			 */
+			nitems = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
+
+			if (nitems >= MIN_ARRAY_SIZE_FOR_HASHED_SAOP)
+			{
+				HashedScalarArrayOpExpr *hashedsaop;
+
+				/*
+				 * HashedScalarArrayOpExpr is a simple wrapper around
+				 * ScalarArrayOpExpr to inform the executor to build a hash
+				 * table for the ScalarArrayOpExpr.
+				 */
+				hashedsaop = makeNode(HashedScalarArrayOpExpr);
+				hashedsaop->saop = saop;
+
+				return (Node *) hashedsaop;
+			}
+		}
+
+		return (Node *) saop;
+	}
+
+	return expression_tree_mutator(node, convert_saop_to_hashed_saop, NULL);
+}
+
 
 /*--------------------
  * estimate_expression_value

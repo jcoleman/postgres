@@ -86,6 +86,9 @@ exprType(const Node *expr)
 		case T_ScalarArrayOpExpr:
 			type = BOOLOID;
 			break;
+		case T_HashedScalarArrayOpExpr:
+			type = BOOLOID;
+			break;
 		case T_BoolExpr:
 			type = BOOLOID;
 			break;
@@ -802,10 +805,13 @@ exprCollation(const Node *expr)
 			coll = ((const NullIfExpr *) expr)->opcollid;
 			break;
 		case T_ScalarArrayOpExpr:
-			coll = InvalidOid;	/* result is always boolean */
+			coll = InvalidOid;	/* result is always InvalidOid */
+			break;
+		case T_HashedScalarArrayOpExpr:
+			coll = InvalidOid;	/* result is always InvalidOid */
 			break;
 		case T_BoolExpr:
-			coll = InvalidOid;	/* result is always boolean */
+			coll = InvalidOid;	/* result is always InvalidOid */
 			break;
 		case T_SubLink:
 			{
@@ -1050,10 +1056,10 @@ exprSetCollation(Node *expr, Oid collation)
 			((NullIfExpr *) expr)->opcollid = collation;
 			break;
 		case T_ScalarArrayOpExpr:
-			Assert(!OidIsValid(collation)); /* result is always boolean */
+			Assert(!OidIsValid(collation)); /* always InvalidOid */
 			break;
 		case T_BoolExpr:
-			Assert(!OidIsValid(collation)); /* result is always boolean */
+			Assert(!OidIsValid(collation)); /* always InvalidOid */
 			break;
 		case T_SubLink:
 #ifdef USE_ASSERT_CHECKING
@@ -2012,6 +2018,15 @@ expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
+		case T_HashedScalarArrayOpExpr:
+			{
+				HashedScalarArrayOpExpr *expr = (HashedScalarArrayOpExpr *) node;
+
+				if (expression_tree_walker((Node *) expr->saop,
+					walker, context))
+					return true;
+			}
+			break;
 		case T_BoolExpr:
 			{
 				BoolExpr   *expr = (BoolExpr *) node;
@@ -2774,6 +2789,16 @@ expression_tree_mutator(Node *node,
 
 				FLATCOPY(newnode, expr, ScalarArrayOpExpr);
 				MUTATE(newnode->args, expr->args, List *);
+				return (Node *) newnode;
+			}
+			break;
+		case T_HashedScalarArrayOpExpr:
+			{
+				HashedScalarArrayOpExpr *expr = (HashedScalarArrayOpExpr *) node;
+				HashedScalarArrayOpExpr *newnode;
+
+				FLATCOPY(newnode, expr, HashedScalarArrayOpExpr);
+				MUTATE(newnode->saop, expr->saop, ScalarArrayOpExpr *);
 				return (Node *) newnode;
 			}
 			break;

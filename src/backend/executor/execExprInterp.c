@@ -76,7 +76,6 @@
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
 #include "utils/xml.h"
-#include "lib/qunique.h"
 
 /*
  * Use computed-goto-based opcode dispatch when computed gotos are available.
@@ -184,9 +183,9 @@ saop_hash_element_match(struct saophash_hash *tb, Datum key1, Datum key2);
 static uint32 saop_element_hash(struct saophash_hash *tb, Datum key);
 
 /*
- * Define parameters for ScalarArrayOpExpr hash table code generation. The interface is
- * *also* declared in execnodes.h (to generate the types, which are externally
- * visible).
+ * Define parameters for ScalarArrayOpExpr hash table code generation. The
+ * interface is *also* declared in execnodes.h (to generate the types, which
+ * are externally visible).
  */
 #define SH_PREFIX saophash
 #define SH_ELEMENT_TYPE ScalarArrayOpExprHashEntryData
@@ -448,7 +447,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_DOMAIN_CHECK,
 		&&CASE_EEOP_CONVERT_ROWTYPE,
 		&&CASE_EEOP_SCALARARRAYOP,
-		&&CASE_EEOP_SCALARARRAYOP_HASHED,
+		&&CASE_EEOP_HASHED_SCALARARRAYOP,
 		&&CASE_EEOP_XMLEXPR,
 		&&CASE_EEOP_AGGREF,
 		&&CASE_EEOP_GROUPING_FUNC,
@@ -1459,10 +1458,10 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			EEO_NEXT();
 		}
 
-		EEO_CASE(EEOP_SCALARARRAYOP_HASHED)
+		EEO_CASE(EEOP_HASHED_SCALARARRAYOP)
 		{
 			/* too complex for an inline implementation */
-			ExecEvalScalarArrayOpHashed(state, op, econtext);
+			ExecEvalHashedScalarArrayOp(state, op, econtext);
 
 			EEO_NEXT();
 		}
@@ -3386,13 +3385,13 @@ static uint32
 saop_element_hash(struct saophash_hash *tb, Datum key)
 {
 	ScalarArrayOpExprHashTable elements_tab = (ScalarArrayOpExprHashTable) tb->private_data;
-	FunctionCallInfo fcinfo = elements_tab->op->d.scalararrayhashedop.hash_fcinfo_data;
+	FunctionCallInfo fcinfo = elements_tab->op->d.hashedscalararrayop.hash_fcinfo_data;
 	Datum hash;
 
 	fcinfo->args[0].value = key;
 	fcinfo->args[0].isnull = false;
 
-	hash = elements_tab->op->d.scalararrayhashedop.hash_fn_addr(fcinfo);
+	hash = elements_tab->op->d.hashedscalararrayop.hash_fn_addr(fcinfo);
 
 	return DatumGetUInt32(hash);
 }
@@ -3407,14 +3406,14 @@ saop_hash_element_match(struct saophash_hash *tb, Datum key1, Datum key2)
 	Datum result;
 
 	ScalarArrayOpExprHashTable elements_tab = (ScalarArrayOpExprHashTable) tb->private_data;
-	FunctionCallInfo fcinfo = elements_tab->op->d.scalararrayhashedop.fcinfo_data;
+	FunctionCallInfo fcinfo = elements_tab->op->d.hashedscalararrayop.fcinfo_data;
 
 	fcinfo->args[0].value = key1;
 	fcinfo->args[0].isnull = false;
 	fcinfo->args[1].value = key2;
 	fcinfo->args[1].isnull = false;
 
-	result = elements_tab->op->d.scalararrayhashedop.fn_addr(fcinfo);
+	result = elements_tab->op->d.hashedscalararrayop.fn_addr(fcinfo);
 
 	return DatumGetBool(result);
 }
@@ -3432,11 +3431,11 @@ saop_hash_element_match(struct saophash_hash *tb, Datum key1, Datum key2)
  * The operator always yields boolean.
  */
 void
-ExecEvalScalarArrayOpHashed(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
+ExecEvalHashedScalarArrayOp(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 {
-	ScalarArrayOpExprHashTable elements_tab = op->d.scalararrayhashedop.elements_tab;
-	FunctionCallInfo fcinfo = op->d.scalararrayhashedop.fcinfo_data;
-	bool		strictfunc = op->d.scalararrayhashedop.finfo->fn_strict;
+	ScalarArrayOpExprHashTable elements_tab = op->d.hashedscalararrayop.elements_tab;
+	FunctionCallInfo fcinfo = op->d.hashedscalararrayop.fcinfo_data;
+	bool		strictfunc = op->d.hashedscalararrayop.finfo->fn_strict;
 	ArrayType  *arr;
 	Datum		scalar = fcinfo->args[0].value;
 	bool		scalar_isnull = fcinfo->args[0].isnull;
@@ -3457,7 +3456,7 @@ ExecEvalScalarArrayOpHashed(ExprState *state, ExprEvalStep *op, ExprContext *eco
 		return;
 	}
 
-	/* Preprocess the array the first time we execute the op. */
+	/* Build the hash table on first evaluation */
 	if (elements_tab == NULL)
 	{
 		int16		typlen;
@@ -3481,7 +3480,7 @@ ExecEvalScalarArrayOpHashed(ExprState *state, ExprEvalStep *op, ExprContext *eco
 		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 
 		elements_tab = (ScalarArrayOpExprHashTable) palloc(sizeof(ScalarArrayOpExprHashTableData));
-		op->d.scalararrayhashedop.elements_tab = elements_tab;
+		op->d.hashedscalararrayop.elements_tab = elements_tab;
 		elements_tab->op = op;
 		elements_tab->hashtab = saophash_create(CurrentMemoryContext, nitems, elements_tab);
 
@@ -3524,7 +3523,7 @@ ExecEvalScalarArrayOpHashed(ExprState *state, ExprEvalStep *op, ExprContext *eco
 		 * Remember if we had any nulls so that we know if we need to execute
 		 * non-strict functions with a null lhs value if no match is found.
 		 */
-		op->d.scalararrayhashedop.has_nulls = num_nulls > 0;
+		op->d.hashedscalararrayop.has_nulls = num_nulls > 0;
 
 		/*
 		 * We only setup a binary search op if we have > 8 elements, so we don't
@@ -3544,7 +3543,7 @@ ExecEvalScalarArrayOpHashed(ExprState *state, ExprEvalStep *op, ExprContext *eco
 	 * the possibility of null values (we've previously removed them from the
 	 * array).
 	 */
-	if (!DatumGetBool(result) && op->d.scalararrayhashedop.has_nulls)
+	if (!DatumGetBool(result) && op->d.hashedscalararrayop.has_nulls)
 	{
 		if (strictfunc)
 		{
@@ -3570,7 +3569,7 @@ ExecEvalScalarArrayOpHashed(ExprState *state, ExprEvalStep *op, ExprContext *eco
 			fcinfo->args[1].value = (Datum) 0;
 			fcinfo->args[1].isnull = true;
 
-			result = op->d.scalararrayhashedop.fn_addr(fcinfo);
+			result = op->d.hashedscalararrayop.fn_addr(fcinfo);
 			resultnull = fcinfo->isnull;
 		}
 	}

@@ -988,6 +988,14 @@ _outPlanRowMark(StringInfo str, const PlanRowMark *node)
 }
 
 static void
+_outHashedScalarArrayOpExpr(StringInfo str, const HashedScalarArrayOpExpr *node)
+{
+	WRITE_NODE_TYPE("HASHEDSCALARARRAYOPEXPR");
+
+	WRITE_NODE_FIELD(saop);
+}
+
+static void
 _outPartitionPruneInfo(StringInfo str, const PartitionPruneInfo *node)
 {
 	WRITE_NODE_TYPE("PARTITIONPRUNEINFO");
@@ -3967,6 +3975,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_PlanRowMark:
 				_outPlanRowMark(str, obj);
+				break;
+			case T_HashedScalarArrayOpExpr:
+				_outHashedScalarArrayOpExpr(str, obj);
 				break;
 			case T_PartitionPruneInfo:
 				_outPartitionPruneInfo(str, obj);

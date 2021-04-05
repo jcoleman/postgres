@@ -67,7 +67,7 @@ select count(*) from date_tbl
   where f1 not between symmetric '1997-01-01' and '1998-01-01';
 
 --
--- Tests for ScalarArrayOpExpr hash optimization
+-- Tests for HashedScalarArrayOpExpr
 --
 
 select 1 in (10, 9, 2, 8, 3, 7, 4, 6, 5, 1);

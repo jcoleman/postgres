@@ -1276,6 +1276,16 @@ _copyPlanRowMark(const PlanRowMark *from)
 	return newnode;
 }
 
+static HashedScalarArrayOpExpr *
+_copyHashedScalarArrayOpExpr(const HashedScalarArrayOpExpr *from)
+{
+	HashedScalarArrayOpExpr *newnode = makeNode(HashedScalarArrayOpExpr);
+
+	COPY_NODE_FIELD(saop);
+
+	return newnode;
+}
+
 static PartitionPruneInfo *
 _copyPartitionPruneInfo(const PartitionPruneInfo *from)
 {
@@ -5090,6 +5100,9 @@ copyObjectImpl(const void *from)
 			break;
 		case T_PlanRowMark:
 			retval = _copyPlanRowMark(from);
+			break;
+		case T_HashedScalarArrayOpExpr:
+			retval = _copyHashedScalarArrayOpExpr(from);
 			break;
 		case T_PartitionPruneInfo:
 			retval = _copyPartitionPruneInfo(from);

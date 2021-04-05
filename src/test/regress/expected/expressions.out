@@ -159,7 +159,7 @@ select count(*) from date_tbl
 (1 row)
 
 --
--- Tests for ScalarArrayOpExpr hash optimization
+-- Tests for HashedScalarArrayOpExpr
 --
 select 1 in (10, 9, 2, 8, 3, 7, 4, 6, 5, 1);
  ?column? 

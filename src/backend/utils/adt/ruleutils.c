@@ -8330,6 +8330,38 @@ get_rule_expr(Node *node, deparse_context *context,
 			}
 			break;
 
+		case T_HashedScalarArrayOpExpr:
+		{
+			HashedScalarArrayOpExpr *hsaop = (HashedScalarArrayOpExpr *) node;
+			ScalarArrayOpExpr *expr = hsaop->saop;
+			List	   *args = expr->args;
+			Node	   *arg1 = (Node *) linitial(args);
+			Node	   *arg2 = (Node *) lsecond(args);
+
+			Assert(expr->useOr);
+
+			if (!PRETTY_PAREN(context))
+				appendStringInfoChar(buf, '(');
+			get_rule_expr_paren(arg1, context, true, node);
+
+			/*
+			 * XXX Syntax: Should this look like a ScalarArrayOpExpr or
+			 * should we make it look slightly different? Or should this
+			 * output always be reparseable?
+			 */
+			appendStringInfo(buf, " %s %s (",
+				generate_operator_name(expr->opno,
+					exprType(arg1),
+					get_base_element_type(exprType(arg2))), "HASH ANY");
+			get_rule_expr_paren(arg2, context, true, node);
+
+			Assert(!IsA(arg2, SubLink));
+			appendStringInfoChar(buf, ')');
+			if (!PRETTY_PAREN(context))
+				appendStringInfoChar(buf, ')');
+		}
+		break;
+
 		case T_BoolExpr:
 			{
 				BoolExpr   *expr = (BoolExpr *) node;

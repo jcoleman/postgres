@@ -1633,6 +1633,12 @@ ExecRelCheck(ResultRelInfo *resultRelInfo,
 			Expr	   *checkconstr;
 
 			checkconstr = stringToNode(check[i].ccbin);
+			/*
+			 * XXX consider passing checkconstr through
+			 * convert_saop_to_hashed_saop?  We'd need to only do this when
+			 * performing bulk inserts, and there does not currently seem to
+			 * be any way to determine that.
+			 */
 			resultRelInfo->ri_ConstraintExprs[i] =
 				ExecPrepareExpr(checkconstr, estate);
 		}
