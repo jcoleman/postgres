@@ -896,6 +896,7 @@ make_scalar_array_op(ParseState *pstate, List *opname,
 	result->opfuncid = opform->oprcode;
 	result->hashfuncid = InvalidOid;
 	result->useOr = useOr;
+	result->isNegator = strcmp("<>", NameStr(opform->oprname)) == 0;
 	/* inputcollid will be set by parse_collate.c */
 	result->args = args;
 	result->location = location;

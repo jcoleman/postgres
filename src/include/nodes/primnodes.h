@@ -592,6 +592,7 @@ typedef struct ScalarArrayOpExpr
 	Oid			opfuncid;		/* PG_PROC OID of comparison function */
 	Oid			hashfuncid;		/* PG_PROC OID of hash func or InvalidOid */
 	bool		useOr;			/* true for ANY, false for ALL */
+	bool		isNegator;		/* true if NOT has been applied to opno */
 	Oid			inputcollid;	/* OID of collation that operator should use */
 	List	   *args;			/* the scalar and array operands */
 	int			location;		/* token location, or -1 if unknown */

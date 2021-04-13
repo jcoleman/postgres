@@ -2137,8 +2137,8 @@ convert_saop_to_hashed_saop_walker(Node *node, void *context)
 		Oid			lefthashfunc;
 		Oid			righthashfunc;
 
-		if (saop->useOr && arrayarg && IsA(arrayarg, Const) &&
-			!((Const *) arrayarg)->constisnull &&
+		if ((saop->useOr || (!saop->useOr && saop->isNegator)) && arrayarg &&
+			IsA(arrayarg, Const) && !((Const *) arrayarg)->constisnull &&
 			get_op_hash_functions(saop->opno, &lefthashfunc, &righthashfunc) &&
 			lefthashfunc == righthashfunc)
 		{

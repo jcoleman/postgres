@@ -129,6 +129,7 @@ negate_clause(Node *node)
 					newopexpr->opfuncid = InvalidOid;
 					newopexpr->hashfuncid = InvalidOid;
 					newopexpr->useOr = !saopexpr->useOr;
+					newopexpr->isNegator = true;
 					newopexpr->inputcollid = saopexpr->inputcollid;
 					newopexpr->args = saopexpr->args;
 					newopexpr->location = saopexpr->location;
