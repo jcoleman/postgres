@@ -68,6 +68,7 @@ static Bitmapset *get_eclass_indexes_for_relids(PlannerInfo *root,
 												Relids relids);
 static Bitmapset *get_common_eclass_indexes(PlannerInfo *root, Relids relids1,
 											Relids relids2);
+static Expr* expr_list_member_ignore_relabel(Expr *node, List *exprlist);
 
 
 /*
@@ -798,6 +799,27 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 	return NULL;
 }
 
+static Expr*
+expr_list_member_ignore_relabel(Expr *node, List *exprlist)
+{
+	ListCell   *temp;
+
+	while (node && IsA(node, RelabelType))
+		node = ((RelabelType *) node)->arg;
+
+	foreach(temp, exprlist)
+	{
+		Expr	   *tlexpr = (Expr *) lfirst(temp);
+
+		while (tlexpr && IsA(tlexpr, RelabelType))
+			tlexpr = ((RelabelType *) tlexpr)->arg;
+
+		if (equal(node, tlexpr))
+			return node;
+	}
+	return NULL;
+}
+
 /*
  * Find an equivalence class member expression that can be safely used to build
  * a sort node using the provided relation. The rules are a subset of those
@@ -819,6 +841,9 @@ find_em_expr_usable_for_sorting_rel(PlannerInfo *root, EquivalenceClass *ec,
 	{
 		EquivalenceMember *em = lfirst(lc_em);
 		Expr	   *em_expr = em->em_expr;
+		List	   *exprvars;
+		ListCell   *k;
+		PathTarget *target = rel->reltarget;
 
 		/*
 		 * We shouldn't be trying to sort by an equivalence class that
@@ -858,8 +883,23 @@ find_em_expr_usable_for_sorting_rel(PlannerInfo *root, EquivalenceClass *ec,
 		 * valuable here to expend the work trying to find a match in the
 		 * target's exprs since such a sort will have to be postponed anyway.
 		 */
-		if (!ec->ec_has_volatile)
-			return em->em_expr;
+		if (ec->ec_has_volatile)
+			return NULL;
+
+
+		exprvars = pull_var_clause((Node *) em_expr,
+								   PVC_INCLUDE_AGGREGATES |
+								   PVC_INCLUDE_WINDOWFUNCS |
+								   PVC_INCLUDE_PLACEHOLDERS);
+		foreach(k, exprvars)
+		{
+			if (!expr_list_member_ignore_relabel(lfirst(k), target->exprs))
+				break;
+		}
+		list_free(exprvars);
+
+		if (!k) /* If we made it through exprvars finding a tlist member for each */
+			return em->em_expr; /* found usable expression */
 	}
 
 	/* We didn't find any suitable equivalence class expression */
