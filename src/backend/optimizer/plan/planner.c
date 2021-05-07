@@ -4088,6 +4088,7 @@ create_window_paths(PlannerInfo *root,
 	if (input_rel->consider_parallel && output_target_parallel_safe &&
 		is_parallel_safe(root, (Node *) activeWindows, NULL))
 		window_rel->consider_parallel = true;
+	/* consider_parallel_rechecking_params */
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the window rel.
@@ -4292,6 +4293,7 @@ create_distinct_paths(PlannerInfo *root,
 	 * expressions are parallel-safe.
 	 */
 	distinct_rel->consider_parallel = input_rel->consider_parallel;
+	distinct_rel->consider_parallel_rechecking_params = input_rel->consider_parallel_rechecking_params;
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the distinct_rel.
@@ -4493,6 +4495,7 @@ create_ordered_paths(PlannerInfo *root,
 	 */
 	if (input_rel->consider_parallel && target_parallel_safe)
 		ordered_rel->consider_parallel = true;
+	/* consider_parallel_rechecking_params */
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the ordered_rel.
