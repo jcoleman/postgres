@@ -1142,6 +1142,8 @@ set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 		 */
 		if (!childrel->consider_parallel)
 			rel->consider_parallel = false;
+		if (!childrel->consider_parallel_rechecking_params)
+			rel->consider_parallel_rechecking_params = false;
 
 		/*
 		 * Accumulate size information from each live child.
@@ -1263,6 +1265,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		 */
 		if (!rel->consider_parallel)
 			childrel->consider_parallel = false;
+		if (!childrel->consider_parallel_rechecking_params)
+			rel->consider_parallel_rechecking_params = false;
 
 		/*
 		 * Compute the child's access paths.

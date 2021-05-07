@@ -1020,6 +1020,7 @@ SS_process_ctes(PlannerInfo *root)
 		 * parallel-safe.
 		 */
 		splan->parallel_safe = false;
+		splan->parallel_safe_ignoring_params = false;
 		splan->setParam = NIL;
 		splan->parParam = NIL;
 		splan->args = NIL;
@@ -2176,6 +2177,7 @@ SS_charge_for_initplans(PlannerInfo *root, RelOptInfo *final_rel)
 		path->startup_cost += initplan_cost;
 		path->total_cost += initplan_cost;
 		path->parallel_safe = false;
+		path->parallel_safe_ignoring_params = false;
 	}
 
 	/*
@@ -2184,6 +2186,7 @@ SS_charge_for_initplans(PlannerInfo *root, RelOptInfo *final_rel)
 	 */
 	final_rel->partial_pathlist = NIL;
 	final_rel->consider_parallel = false;
+	final_rel->consider_parallel_rechecking_params = false;
 
 	/* We needn't do set_cheapest() here, caller will do it */
 }
