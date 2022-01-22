@@ -856,7 +856,7 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		List	   *save_safe_param_ids;
 
 		if (!subplan->parallel_safe &&
-			(!enable_parallel_params_recheck || !subplan->parallel_safe_ignoring_params) &&
+			!(enable_parallel_params_recheck && subplan->parallel_safe_ignoring_params) &&
 			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context, false) &&
 			max_parallel_hazard_walker_can_short_circuit(context))
 			return true;
@@ -891,6 +891,11 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		if (param->paramkind == PARAM_EXTERN)
 			return false;
 
+		/* if (param->paramkind == PARAM_EXEC) */
+		/* 	return false; */
+
+		/* TODO: if it's not a param exec param we can always mark it unsafe
+		 * rather as delayed for reconsideration later. */
 		if (param->paramkind != PARAM_EXEC ||
 			!list_member_int(context->safe_param_ids, param->paramid))
 		{
