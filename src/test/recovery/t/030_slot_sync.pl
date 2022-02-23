@@ -56,3 +56,32 @@ is($result, qq(sub1|pgoutput|postgres), 'logical slot on standby');
 
 $node_primary->safe_psql('postgres', "INSERT INTO t1 VALUES (4), (5), (6)");
 $node_primary->wait_for_catchup('sub1');
+
+$node_primary->wait_for_catchup($node_phys_standby->name);
+
+# Logical subscriber and physical replica are caught up at this point.
+
+# Stop subscriber
+$node_subscriber->safe_psql('postgres', "ALTER SUBSCRIPTION sub1 DISABLE");
+
+# Make a catalog change on the primary
+# $node_primary->safe_psql('postgres', "ALTER TABLE t1 RENAME COLUMN a TO b");
+
+# Write to the changed table
+$node_primary->safe_psql('postgres', "INSERT INTO t1 VALUES (7), (8), (9)");
+
+# Vacuum the catalog tables
+# $node_primary->safe_psql('postgres', "VACUUM pg_class");
+
+# Ensure physical replay catches up
+$node_primary->wait_for_catchup($node_phys_standby->name);
+
+# Failover
+$node_primary->stop;
+$node_phys_standby->promote;
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION sub1 CONNECTION '" . ($node_phys_standby->connstr . ' dbname=postgres') . "'");
+
+# Attempt to decode logical slot on (promoted) replica
+$node_subscriber->safe_psql('postgres', "ALTER SUBSCRIPTION sub1 ENABLE");
+$node_phys_standby->wait_for_catchup('sub1');
