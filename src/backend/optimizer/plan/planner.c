@@ -4874,6 +4874,7 @@ create_ordered_paths(PlannerInfo *root,
 					 bool target_parallel_safe,
 					 double limit_tuples)
 {
+	List	   *useful_pathkeys_list = NIL;
 	Path	   *cheapest_input_path = input_rel->cheapest_total_path;
 	RelOptInfo *ordered_rel;
 	ListCell   *lc;
@@ -4897,43 +4898,82 @@ create_ordered_paths(PlannerInfo *root,
 	ordered_rel->useridiscurrent = input_rel->useridiscurrent;
 	ordered_rel->fdwroutine = input_rel->fdwroutine;
 
-	foreach(lc, input_rel->pathlist)
+	useful_pathkeys_list = list_make1(root->sort_pathkeys);
+	useful_pathkeys_list = list_concat(useful_pathkeys_list,
+			get_useful_pathkeys_for_relation(root, input_rel, false));
+
+	foreach(lc, useful_pathkeys_list)
 	{
-		Path	   *input_path = (Path *) lfirst(lc);
-		Path	   *sorted_path = input_path;
-		bool		is_sorted;
-		int			presorted_keys;
+		List	   *useful_pathkeys = lfirst(lc);
+		ListCell   *lc2;
 
-		is_sorted = pathkeys_count_contained_in(root->sort_pathkeys,
-												input_path->pathkeys, &presorted_keys);
-
-		if (is_sorted)
+		foreach(lc2, input_rel->pathlist)
 		{
-			/* Use the input path as is, but add a projection step if needed */
-			if (sorted_path->pathtarget != target)
-				sorted_path = apply_projection_to_path(root, ordered_rel,
-													   sorted_path, target);
+			Path	   *input_path = (Path *) lfirst(lc2);
+			Path	   *sorted_path = input_path;
+			bool		is_sorted;
+			int			presorted_keys;
 
-			add_path(ordered_rel, sorted_path);
-		}
-		else
-		{
-			/*
-			 * Try adding an explicit sort, but only to the cheapest total
-			 * path since a full sort should generally add the same cost to
-			 * all paths.
-			 */
-			if (input_path == cheapest_input_path)
+			is_sorted = pathkeys_count_contained_in(useful_pathkeys,
+													input_path->pathkeys, &presorted_keys);
+
+			if (is_sorted)
+			{
+				/* Use the input path as is, but add a projection step if needed */
+				if (sorted_path->pathtarget != target)
+					sorted_path = apply_projection_to_path(root, ordered_rel,
+														   sorted_path, target);
+
+				add_path(ordered_rel, sorted_path);
+			}
+			else
 			{
 				/*
-				 * Sort the cheapest input path. An explicit sort here can
-				 * take advantage of LIMIT.
+				 * Try adding an explicit sort, but only to the cheapest total
+				 * path since a full sort should generally add the same cost to
+				 * all paths.
 				 */
-				sorted_path = (Path *) create_sort_path(root,
-														ordered_rel,
-														input_path,
-														root->sort_pathkeys,
-														limit_tuples);
+				if (input_path == cheapest_input_path)
+				{
+					/*
+					 * Sort the cheapest input path. An explicit sort here can
+					 * take advantage of LIMIT.
+					 */
+					sorted_path = (Path *) create_sort_path(root,
+															ordered_rel,
+															input_path,
+															useful_pathkeys,
+															limit_tuples);
+					/* Add projection step if needed */
+					if (sorted_path->pathtarget != target)
+						sorted_path = apply_projection_to_path(root, ordered_rel,
+															   sorted_path, target);
+
+					add_path(ordered_rel, sorted_path);
+				}
+
+				/*
+				 * If incremental sort is enabled, then try it as well. Unlike
+				 * with regular sorts, we can't just look at the cheapest path,
+				 * because the cost of incremental sort depends on how well
+				 * presorted the path is. Additionally incremental sort may enable
+				 * a cheaper startup path to win out despite higher total cost.
+				 */
+				if (!enable_incremental_sort)
+					continue;
+
+				/* Likewise, if the path can't be used for incremental sort. */
+				if (!presorted_keys)
+					continue;
+
+				/* Also consider incremental sort. */
+				sorted_path = (Path *) create_incremental_sort_path(root,
+																	ordered_rel,
+																	input_path,
+																	useful_pathkeys,
+																	presorted_keys,
+																	limit_tuples);
+
 				/* Add projection step if needed */
 				if (sorted_path->pathtarget != target)
 					sorted_path = apply_projection_to_path(root, ordered_rel,
@@ -4941,35 +4981,6 @@ create_ordered_paths(PlannerInfo *root,
 
 				add_path(ordered_rel, sorted_path);
 			}
-
-			/*
-			 * If incremental sort is enabled, then try it as well. Unlike
-			 * with regular sorts, we can't just look at the cheapest path,
-			 * because the cost of incremental sort depends on how well
-			 * presorted the path is. Additionally incremental sort may enable
-			 * a cheaper startup path to win out despite higher total cost.
-			 */
-			if (!enable_incremental_sort)
-				continue;
-
-			/* Likewise, if the path can't be used for incremental sort. */
-			if (!presorted_keys)
-				continue;
-
-			/* Also consider incremental sort. */
-			sorted_path = (Path *) create_incremental_sort_path(root,
-																ordered_rel,
-																input_path,
-																root->sort_pathkeys,
-																presorted_keys,
-																limit_tuples);
-
-			/* Add projection step if needed */
-			if (sorted_path->pathtarget != target)
-				sorted_path = apply_projection_to_path(root, ordered_rel,
-													   sorted_path, target);
-
-			add_path(ordered_rel, sorted_path);
 		}
 	}
 

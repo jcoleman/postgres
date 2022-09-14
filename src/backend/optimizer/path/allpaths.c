@@ -3068,7 +3068,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
  * in the future. For example, we might want to consider pathkeys useful for
  * merge joins.
  */
-static List *
+List *
 get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel,
 								 bool require_parallel_safe)
 {

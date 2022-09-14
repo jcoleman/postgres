@@ -58,4 +58,7 @@ extern Path *get_cheapest_fractional_path(RelOptInfo *rel,
 
 extern Expr *preprocess_phv_expression(PlannerInfo *root, Expr *expr);
 
+extern List * get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel,
+								 bool require_parallel_safe);
+
 #endif							/* PLANNER_H */
