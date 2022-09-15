@@ -3403,22 +3403,38 @@ standard_qp_callback(PlannerInfo *root, void *extra)
 	 *
 	 * Note: if we have both ORDER BY and GROUP BY, and ORDER BY is a superset
 	 * of GROUP BY, it would be tempting to request sort by ORDER BY --- but
+	 * XXX: now that we have incremental sort...is this fine to do?
 	 * that might just leave us failing to exploit an available sort order at
 	 * all.  Needs more thought.  The choice for DISTINCT versus ORDER BY is
 	 * much easier, since we know that the parser ensured that one is a
 	 * superset of the other.
 	 */
 	if (root->group_pathkeys)
+	{
+		elog(WARNING, "query_pathkeys=group_pathkeys");
 		root->query_pathkeys = root->group_pathkeys;
+	}
 	else if (root->window_pathkeys)
+	{
+		elog(WARNING, "query_pathkeys=window_pathkeys");
 		root->query_pathkeys = root->window_pathkeys;
+	}
 	else if (list_length(root->distinct_pathkeys) >
 			 list_length(root->sort_pathkeys))
+	{
+		elog(WARNING, "query_pathkeys=distinct_pathkeys");
 		root->query_pathkeys = root->distinct_pathkeys;
+	}
 	else if (root->sort_pathkeys)
+	{
+		elog(WARNING, "query_pathkeys=sort_pathkeys");
 		root->query_pathkeys = root->sort_pathkeys;
+	}
 	else
+	{
+		elog(WARNING, "query_pathkeys=NIL");
 		root->query_pathkeys = NIL;
+	}
 }
 
 /*
@@ -4878,6 +4894,7 @@ create_ordered_paths(PlannerInfo *root,
 	Path	   *cheapest_input_path = input_rel->cheapest_total_path;
 	RelOptInfo *ordered_rel;
 	ListCell   *lc;
+	int matchingkeys;
 
 	/* For now, do all work in the (ORDERED, NULL) upperrel */
 	ordered_rel = fetch_upper_rel(root, UPPERREL_ORDERED, NULL);
@@ -4901,6 +4918,16 @@ create_ordered_paths(PlannerInfo *root,
 	useful_pathkeys_list = list_make1(root->sort_pathkeys);
 	useful_pathkeys_list = list_concat(useful_pathkeys_list,
 			get_useful_pathkeys_for_relation(root, input_rel, false));
+
+	if (list_length(useful_pathkeys_list) == 1)
+		elog(WARNING, "no useful pathkeys");
+	else
+		elog(WARNING, "useful pathkeys");
+
+
+	if (list_length(useful_pathkeys_list) > 1 && pathkeys_count_contained_in(root->sort_pathkeys,
+				lsecond(useful_pathkeys_list), &matchingkeys) && matchingkeys == list_length(lsecond(useful_pathkeys_list)))
+		elog(WARNING, "useful and sort_pathkeys match");
 
 	foreach(lc, useful_pathkeys_list)
 	{
