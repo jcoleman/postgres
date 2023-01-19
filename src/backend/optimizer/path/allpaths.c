@@ -3013,6 +3013,10 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 	if (rel->partial_pathlist == NIL)
 		return;
 
+	/*
+	 * Delay gather path creation until the level in the join tree where all
+	 * params used in a worker are generated within that worker.
+	 */
 	if (!bms_is_subset(required_outer, rel->relids))
 		return;
 
@@ -3052,7 +3056,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 
 		if (subpath->param_info != NULL &&
 			!bms_is_subset(subpath->param_info->ppi_req_outer, rel->relids))
-			break;
+			continue;
 
 		rows = subpath->rows * subpath->parallel_workers;
 		path = create_gather_merge_path(root, rel, subpath, rel->reltarget,
@@ -3164,6 +3168,10 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	if (rel->partial_pathlist == NIL)
 		return;
 
+	/*
+	 * Delay gather path creation until the level in the join tree where all
+	 * params used in a worker are generated within that worker.
+	 */
 	if (!bms_is_subset(required_outer, rel->relids))
 		return;
 
@@ -3212,6 +3220,10 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 			if (is_sorted)
 				continue;
 
+			if (subpath->param_info != NULL &&
+				!bms_is_subset(subpath->param_info->ppi_req_outer, rel->relids))
+				continue;
+
 			/*
 			 * Consider regular sort for the cheapest partial path (for each
 			 * useful pathkeys). We know the path is not sorted, because we'd
@@ -3225,10 +3237,6 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 			if (cheapest_partial_path == subpath)
 			{
 				Path	   *tmp;
-
-				if (subpath->param_info != NULL &&
-					!bms_is_subset(subpath->param_info->ppi_req_outer, rel->relids))
-					break;
 
 				tmp = (Path *) create_sort_path(root,
 												rel,
@@ -3257,10 +3265,6 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 			if (enable_incremental_sort && presorted_keys > 0)
 			{
 				Path	   *tmp;
-
-				if (subpath->param_info != NULL &&
-					!bms_is_subset(subpath->param_info->ppi_req_outer, rel->relids))
-					break;
 
 				/*
 				 * We should have already excluded pathkeys of length 1
