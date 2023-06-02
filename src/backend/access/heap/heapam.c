@@ -415,7 +415,7 @@ heapgetpage(TableScanDesc sscan, BlockNumber block)
 	/*
 	 * Prune and repair fragmentation for the whole page, if possible.
 	 */
-	heap_page_prune_opt(scan->rs_base.rs_rd, buffer);
+	heap_page_prune_opt(scan->rs_base.rs_rd, buffer, false);
 
 	/*
 	 * We must hold share lock on the buffer content while examining tuple
