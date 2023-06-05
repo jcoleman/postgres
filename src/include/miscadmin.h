@@ -118,9 +118,11 @@ extern void ProcessInterrupts(void);
 	 unlikely(InterruptPending))
 #endif
 
+extern void ProcessLogQueryPlanInterrupt(void);
 /* Service interrupt, if one is pending and it's safe to service it now */
 #define CHECK_FOR_INTERRUPTS() \
 do { \
+	ProcessLogQueryPlanInterrupt(); \
 	if (INTERRUPTS_PENDING_CONDITION()) \
 		ProcessInterrupts(); \
 } while(0)
