@@ -1571,7 +1571,8 @@ typedef struct ParamPathInfo
  * That means this path can only be joined to those rels by means of nestloop
  * joins with this path on the inside.  Also note that a parameterized path
  * is responsible for testing all "movable" joinclauses involving this rel
- * and the specified outer rel(s).
+ * and the specified outer rel(s). Params from higher query levels are not
+ * included here.
  *
  * "rows" is the same as parent->rows in simple paths, but in parameterized
  * paths and UniquePaths it can be less than parent->rows, reflecting the
