@@ -40,6 +40,7 @@
 #include "optimizer/paths.h"
 #include "optimizer/plancat.h"
 #include "optimizer/planner.h"
+#include "optimizer/subselect.h"
 #include "optimizer/tlist.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
@@ -3061,6 +3062,16 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 	if (rel->partial_pathlist == NIL)
 		return;
 
+	/*
+	 * Wait to insert Gather nodes until all PARAM_EXEC params are provided
+	 * within the current rel since we can't pass them to workers.
+	 */
+	if (SS_parallel_requires_params_from_outer_level(root))
+	{
+		/* elog(WARNING, "params_req_for_parallel not empty"); */
+		return;
+	}
+
 	/* Should we override the rel's rowcount estimate? */
 	if (override_rows)
 		rowsp = &rows;
@@ -3198,6 +3209,16 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	/* If there are no partial paths, there's nothing to do here. */
 	if (rel->partial_pathlist == NIL)
 		return;
+
+	/*
+	 * Wait to insert Gather nodes until all PARAM_EXEC params are provided
+	 * within the current rel since we can't pass them to workers.
+	 */
+	if (SS_parallel_requires_params_from_outer_level(root))
+	{
+		/* elog(WARNING, "params_req_for_parallel not empty"); */
+		return;
+	}
 
 	/* Should we override the rel's rowcount estimate? */
 	if (override_rows)

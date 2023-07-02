@@ -2057,6 +2057,53 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 }
 
 /*
+ * SS_identify_
+ */
+bool
+SS_parallel_requires_params_from_outer_level(PlannerInfo *root)
+{
+	PlannerInfo *proot;
+	ListCell   *l;
+
+	/*
+	 * If no parameters have been assigned anywhere in the tree, we certainly
+	 * don't need to do anything here.
+	 */
+	if (root->glob->paramExecTypes == NIL)
+		return false;
+
+	/*
+	 * Scan all query levels above this one to see which parameters are due to
+	 * be available from them, either because lower query levels have
+	 * requested them (via plan_params) or because they will be available from
+	 * initPlans of those levels.
+	 */
+	for (proot = root->parent_root; proot != NULL; proot = proot->parent_root)
+	{
+		/* Include ordinary Var/PHV/Aggref/GroupingFunc params */
+		if (proot->plan_params)
+			return true;
+		/* Include any outputs of outer-level initPlans */
+		/* foreach(l, proot->init_plans) */
+		/* { */
+		/* 	SubPlan    *initsubplan = (SubPlan *) lfirst(l); */
+		/* 	ListCell   *l2; */
+        /*  */
+		/* 	foreach(l2, initsubplan->setParam) */
+		/* 	{ */
+		/* 		outer_params = bms_add_member(outer_params, lfirst_int(l2)); */
+		/* 	} */
+		/* } */
+		/* Don't need to be concerned with worktable ID; we don't support
+		 * executing recursive queries in parallel anyway.
+		 */
+	}
+
+	return false;
+}
+
+
+/*
  * SS_identify_outer_params - identify the Params available from outer levels
  *
  * This must be run after SS_replace_correlation_vars and SS_process_sublinks

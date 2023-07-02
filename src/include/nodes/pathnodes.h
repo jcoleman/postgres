@@ -698,7 +698,8 @@ typedef struct PartitionSchemeData *PartitionScheme;
  *		eclass_indexes - EquivalenceClasses that mention this rel (filled
  *						 only after EC merging is complete)
  *		subroot - PlannerInfo for subquery (NULL if it's not a subquery)
- *		subplan_params - list of PlannerParamItems to be passed to subquery
+ *		subplan_params - list of PlannerParamItems to be passed to subquery;
+ *						 set after subquery_planner returns
  *
  *		Note: for a subquery, tuples and subroot are not set immediately
  *		upon creation of the RelOptInfo object; they are filled in when
