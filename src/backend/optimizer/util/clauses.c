@@ -89,7 +89,6 @@ typedef struct
 {
 	char		max_hazard;		/* worst proparallel hazard found so far */
 	char		max_interesting;	/* worst proparallel hazard of interest */
-	List	   *safe_param_ids; /* PARAM_EXEC Param IDs to treat as safe */
 } max_parallel_hazard_context;
 
 static bool contain_agg_clause_walker(Node *node, void *context);
@@ -737,7 +736,6 @@ max_parallel_hazard(Query *parse)
 
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_UNSAFE;
-	context.safe_param_ids = NIL;
 	(void) max_parallel_hazard_walker((Node *) parse, &context);
 	return context.max_hazard;
 }
@@ -753,8 +751,6 @@ bool
 is_parallel_safe(PlannerInfo *root, Node *node)
 {
 	max_parallel_hazard_context context;
-	PlannerInfo *proot;
-	ListCell   *l;
 
 	/*
 	 * Even if the original querytree contained nothing unsafe, we need to
@@ -768,23 +764,6 @@ is_parallel_safe(PlannerInfo *root, Node *node)
 	/* Else use max_parallel_hazard's search logic, but stop on RESTRICTED */
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_RESTRICTED;
-	context.safe_param_ids = NIL;
-
-	/*
-	 * The params that refer to the same or parent query level are considered
-	 * parallel-safe.  The idea is that we compute such params at Gather or
-	 * Gather Merge node and pass their value to workers.
-	 */
-	for (proot = root; proot != NULL; proot = proot->parent_root)
-	{
-		foreach(l, proot->init_plans)
-		{
-			SubPlan    *initsubplan = (SubPlan *) lfirst(l);
-
-			context.safe_param_ids = list_concat(context.safe_param_ids,
-												 initsubplan->setParam);
-		}
-	}
 
 	return !max_parallel_hazard_walker(node, &context);
 }
@@ -894,54 +873,24 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	}
 
 	/*
-	 * Only parallel-safe SubPlans can be sent to workers.  Within the
-	 * testexpr of the SubPlan, Params representing the output columns of the
-	 * subplan can be treated as parallel-safe, so temporarily add their IDs
-	 * to the safe_param_ids list while examining the testexpr.
+	 * Only parallel-safe SubPlans can be sent to workers.
 	 */
 	else if (IsA(node, SubPlan))
 	{
 		SubPlan    *subplan = (SubPlan *) node;
-		List	   *save_safe_param_ids;
 
 		if (!subplan->parallel_safe &&
 			max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
 			return true;
-		save_safe_param_ids = context->safe_param_ids;
-		context->safe_param_ids = list_concat_copy(context->safe_param_ids,
-												   subplan->paramIds);
+
 		if (max_parallel_hazard_walker(subplan->testexpr, context))
-			return true;		/* no need to restore safe_param_ids */
-		list_free(context->safe_param_ids);
-		context->safe_param_ids = save_safe_param_ids;
-		/* we must also check args, but no special Param treatment there */
+			return true;
+
+		/* we must also check args */
 		if (max_parallel_hazard_walker((Node *) subplan->args, context))
 			return true;
 		/* don't want to recurse normally, so we're done */
 		return false;
-	}
-
-	/*
-	 * We can't pass Params to workers at the moment either, so they are also
-	 * parallel-restricted, unless they are PARAM_EXTERN Params or are
-	 * PARAM_EXEC Params listed in safe_param_ids, meaning they could be
-	 * either generated within workers or can be computed by the leader and
-	 * then their value can be passed to workers.
-	 */
-	else if (IsA(node, Param))
-	{
-		Param	   *param = (Param *) node;
-
-		if (param->paramkind == PARAM_EXTERN)
-			return false;
-
-		if (param->paramkind != PARAM_EXEC ||
-			!list_member_int(context->safe_param_ids, param->paramid))
-		{
-			if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
-				return true;
-		}
-		return false;			/* nothing to recurse to */
 	}
 
 	/*

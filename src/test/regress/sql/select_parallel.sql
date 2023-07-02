@@ -56,10 +56,34 @@ $$ select 'foo'::varchar union all select 'bar'::varchar $$
 language sql stable;
 select sp_test_func() order by 1;
 
--- Parallel Append is not to be used when the subpath depends on the outer param
+-- Parallel Append can be used when the subpath depends on the outer params
+-- when those params are consumed within the worker that generates them.
 create table part_pa_test(a int, b int) partition by range(a);
 create table part_pa_test_p1 partition of part_pa_test for values from (minvalue) to (0);
 create table part_pa_test_p2 partition of part_pa_test for values from (0) to (maxvalue);
+-- Test that gather paths aren't inserted below a subplan referencing the
+-- outer query when the subplan involves aggregates.
+-- One of the earlier versions of this change generated a plan like this:
+--
+--   Append
+--     ->  Seq Scan on public.part_pa_test_p1 part_pa_test_1
+--       Filter: (part_pa_test_1.a = (SubPlan 1))
+--       SubPlan 1
+--         ->  Finalize Aggregate
+--           ->  Gather
+--               ->  Partial Aggregate
+--                 ->  Parallel Append
+--                     ->  Parallel Seq Scan on public.part_pa_test_p1 p_1
+--                       Filter: (p_1.b = part_pa_test_1.b)
+--                     ->  Parallel Seq Scan on public.part_pa_test_p2 p_2
+--                       Filter: (p_2.b = part_pa_test_1.b)
+--     ->  Seq Scan on public.part_pa_test_p2 part_pa_test_2
+--           Filter: (part_pa_test_2.a = (SubPlan 1))
+--
+-- Notice that the outer seq scan's relation (part_pa_test_1) is referenced by
+-- the parallel seq scan under the gather node. But that would mean we'd need to
+-- pass a value from the leader process to the worker process, and we aren't
+-- able to do that.
 explain (costs off, verbose) select * from part_pa_test where a = (select max(p.a) from part_pa_test p where p.b = part_pa_test.b);
 explain (costs off, verbose)
   select *

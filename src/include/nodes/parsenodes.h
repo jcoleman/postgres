@@ -1033,7 +1033,8 @@ typedef enum RTEKind
 	RTE_VALUES,					/* VALUES (<exprlist>), (<exprlist>), ... */
 	RTE_CTE,					/* common table expr (WITH list element) */
 	RTE_NAMEDTUPLESTORE,		/* tuplestore, e.g. for AFTER triggers */
-	RTE_RESULT,					/* RTE represents an empty FROM clause; such
+	RTE_RESULT,					/* RTE represents an empty FROM clause that is
+								 * guaranteed to return a single row; such
 								 * RTEs are added by the planner, they're not
 								 * present during parsing or rewriting */
 } RTEKind;

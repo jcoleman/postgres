@@ -220,6 +220,8 @@ struct PlannerInfo
 	List	   *plan_params;
 	Bitmapset  *outer_params;
 
+	Bitmapset	*param_ids_from_outer;
+
 	/*
 	 * simple_rel_array holds pointers to "base rels" and "other rels" (see
 	 * comments for RelOptInfo for more info).  It is indexed by rangetable
@@ -698,7 +700,8 @@ typedef struct PartitionSchemeData *PartitionScheme;
  *		eclass_indexes - EquivalenceClasses that mention this rel (filled
  *						 only after EC merging is complete)
  *		subroot - PlannerInfo for subquery (NULL if it's not a subquery)
- *		subplan_params - list of PlannerParamItems to be passed to subquery
+ *		subplan_params - list of PlannerParamItems to be passed to subquery;
+ *						 set after subquery_planner returns
  *
  *		Note: for a subquery, tuples and subroot are not set immediately
  *		upon creation of the RelOptInfo object; they are filled in when

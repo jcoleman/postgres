@@ -1316,6 +1316,24 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 	FinalPathExtraData extra;
 	ListCell   *lc;
 
+	root->param_ids_from_outer = NULL;
+	{
+		Bitmapset *exec_outer_params = NULL;
+		PlannerInfo *proot;
+		ListCell   *l;
+
+		for (proot = root->parent_root; proot != NULL; proot = proot->parent_root)
+		{
+			/* Include ordinary Var/PHV/Aggref/GroupingFunc params */
+			foreach(l, proot->plan_params)
+			{
+				PlannerParamItem *pitem = (PlannerParamItem *) lfirst(l);
+
+				root->param_ids_from_outer = bms_add_member(exec_outer_params, pitem->paramId);
+			}
+		}
+	}
+
 	/* Tweak caller-supplied tuple_fraction if have LIMIT/OFFSET */
 	if (parse->limitCount || parse->limitOffset)
 	{

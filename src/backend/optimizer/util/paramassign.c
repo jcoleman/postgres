@@ -103,6 +103,7 @@ assign_param_for_var(PlannerInfo *root, Var *var)
 	pitem = makeNode(PlannerParamItem);
 	pitem->item = (Node *) var;
 	pitem->paramId = list_length(root->glob->paramExecTypes);
+	/* elog(WARNING, "assigning paramId %u for var", pitem->paramId); */
 	root->glob->paramExecTypes = lappend_oid(root->glob->paramExecTypes,
 											 var->vartype);
 
@@ -178,6 +179,7 @@ assign_param_for_placeholdervar(PlannerInfo *root, PlaceHolderVar *phv)
 	pitem = makeNode(PlannerParamItem);
 	pitem->item = (Node *) phv;
 	pitem->paramId = list_length(root->glob->paramExecTypes);
+	/* elog(WARNING, "assigning paramId %u for phv", pitem->paramId); */
 	root->glob->paramExecTypes = lappend_oid(root->glob->paramExecTypes,
 											 exprType((Node *) phv->phexpr));
 
@@ -244,6 +246,7 @@ replace_outer_agg(PlannerInfo *root, Aggref *agg)
 	pitem = makeNode(PlannerParamItem);
 	pitem->item = (Node *) agg;
 	pitem->paramId = list_length(root->glob->paramExecTypes);
+	/* elog(WARNING, "assigning paramId %u for agg", pitem->paramId); */
 	root->glob->paramExecTypes = lappend_oid(root->glob->paramExecTypes,
 											 agg->aggtype);
 
@@ -291,6 +294,7 @@ replace_outer_grouping(PlannerInfo *root, GroupingFunc *grp)
 	pitem = makeNode(PlannerParamItem);
 	pitem->item = (Node *) grp;
 	pitem->paramId = list_length(root->glob->paramExecTypes);
+	/* elog(WARNING, "assigning paramId %u for grouping", pitem->paramId); */
 	root->glob->paramExecTypes = lappend_oid(root->glob->paramExecTypes,
 											 ptype);
 
@@ -342,6 +346,7 @@ replace_outer_merge_support(PlannerInfo *root, MergeSupportFunc *msf)
 	pitem = makeNode(PlannerParamItem);
 	pitem->item = (Node *) msf;
 	pitem->paramId = list_length(root->glob->paramExecTypes);
+	/* elog(WARNING, "assigning paramId %u for merge", pitem->paramId); */
 	root->glob->paramExecTypes = lappend_oid(root->glob->paramExecTypes,
 											 ptype);
 

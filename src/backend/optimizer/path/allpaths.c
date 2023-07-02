@@ -3061,6 +3061,16 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 	if (rel->partial_pathlist == NIL)
 		return;
 
+	/*
+	 * Wait to insert Gather nodes until all PARAM_EXEC params are provided
+	 * within the current rel since we can't pass them to workers.
+	 */
+	if (!bms_is_empty(root->param_ids_from_outer))
+	{
+		/* elog(WARNING, "params_req_for_parallel not empty"); */
+		return;
+	}
+
 	/* Should we override the rel's rowcount estimate? */
 	if (override_rows)
 		rowsp = &rows;
@@ -3198,6 +3208,16 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	/* If there are no partial paths, there's nothing to do here. */
 	if (rel->partial_pathlist == NIL)
 		return;
+
+	/*
+	 * Wait to insert Gather nodes until all PARAM_EXEC params are provided
+	 * within the current rel since we can't pass them to workers.
+	 */
+	if (!bms_is_empty(root->param_ids_from_outer))
+	{
+		/* elog(WARNING, "params_req_for_parallel not empty"); */
+		return;
+	}
 
 	/* Should we override the rel's rowcount estimate? */
 	if (override_rows)
