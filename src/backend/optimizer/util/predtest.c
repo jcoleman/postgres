@@ -1162,6 +1162,38 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 		}
 	}
 
+	/* Similarly check for boolean IS clauses */
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+		if (test->booltesttype == IS_TRUE)
+		{
+			/* X is true implies X */
+			if (equal(predicate, test->arg))
+				return true;
+		}
+	}
+
+	/*
+	 * As well as boolean IS predicates
+	 *
+	 * Note that we have to be more careful going the opposite direction.
+	 */
+	if (IsA(predicate, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) predicate;
+		/*
+		 * We can only do strong implication here since `null is true` is false
+		 * rather than null.
+		 */
+		if (!weak && test->booltesttype == IS_TRUE)
+		{
+			/* X implies X is true */
+			if (equal(clause, test->arg))
+				return true;
+		}
+	}
+
 	/*
 	 * We could likewise check whether the predicate is boolean equality to a
 	 * constant; but there are no known use-cases for that at the moment,

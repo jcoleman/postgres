@@ -77,6 +77,16 @@ from booleans
 $$);
 
 select * from test_predtest($$
+select x is true, x
+from booleans
+$$);
+
+select * from test_predtest($$
+select x, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
 select x is false, x
 from booleans
 $$);
