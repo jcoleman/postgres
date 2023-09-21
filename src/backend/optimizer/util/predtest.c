@@ -1162,27 +1162,160 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 		}
 	}
 
+	/* Similarly check for boolean IS clauses */
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+		if (test->booltesttype == IS_TRUE)
+		{
+			/* X is true implies X */
+			if (equal(predicate, test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_FALSE)
+		{
+			/* X is false implies NOT X */
+			if (is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_TRUE)
+		{
+			/*
+			 * X is not true implies NOT X
+			 *
+			 * We can only prove weak implication here since null is not true
+			 * evaluates to true rather than null.
+			 */
+			if (weak && is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_FALSE)
+		{
+			/*
+			 * X is not false implies X
+			 *
+			 * We can only prove weak implication here since null is not false
+			 * evaluates to true rather than null.
+			 */
+			if (weak && equal(predicate, test->arg))
+				return true;
+		}
+	}
+
+	/*
+	 * As well as boolean IS predicates
+	 */
+	if (IsA(predicate, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) predicate;
+		if (test->booltesttype == IS_TRUE)
+		{
+			/*
+			 * X implies X is true
+			 *
+			 * We can only prove strong implication here since `null is true`
+			 * is false rather than null.
+			 */
+			if (!weak && equal(clause, test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_FALSE)
+		{
+			/*
+			 * NOT X implies X is false
+			 *
+			 * We can only prove strong implication here since `not null` is
+			 * null rather than true.
+			 */
+			if (!weak && is_notclause(clause) &&
+				equal(get_notclausearg(clause), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_TRUE)
+		{
+			/* NOT X implies X is not true */
+			if (is_notclause(clause) &&
+				equal(get_notclausearg(clause), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_FALSE)
+		{
+			/* X implies X is not false*/
+			if (equal(clause, test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_UNKNOWN)
+		{
+			if (IsA(clause, NullTest))
+			{
+				NullTest   *ntest = (NullTest *) clause;
+
+				/* X IS NULL implies X is unknown */
+				if (ntest->nulltesttype == IS_NULL &&
+					equal(ntest->arg, test->arg))
+					return true;
+			}
+		}
+
+		if (test->booltesttype == IS_NOT_TRUE
+			|| test->booltesttype == IS_NOT_FALSE)
+		{
+
+			if (IsA(clause, BooleanTest))
+			{
+				BooleanTest *testclause = (BooleanTest *) clause;
+
+				/*
+				 * X is unknown weakly implies X is not true
+				 * X is unknown weakly implies X is not false
+				 */
+				if (weak && testclause->booltesttype == IS_UNKNOWN &&
+					equal(testclause->arg, test->arg))
+					return true;
+			}
+		}
+
+	}
+
 	/*
 	 * We could likewise check whether the predicate is boolean equality to a
 	 * constant; but there are no known use-cases for that at the moment,
 	 * assuming that the predicate has been through constant-folding.
 	 */
 
-	/* Next try the IS NOT NULL case */
-	if (!weak &&
-		predicate && IsA(predicate, NullTest))
+	/* Next try the IS [NOT] NULL cases */
+	if (IsA(predicate, NullTest))
 	{
 		NullTest   *ntest = (NullTest *) predicate;
 
-		/* row IS NOT NULL does not act in the simple way we have in mind */
-		if (ntest->nulltesttype == IS_NOT_NULL &&
-			!ntest->argisrow)
+		if (IsA(clause, BooleanTest))
 		{
-			/* strictness of clause for foo implies foo IS NOT NULL */
-			if (clause_is_strict_for(clause, (Node *) ntest->arg, true))
-				return true;
+			BooleanTest* btest = (BooleanTest *) clause;
+
+			if ((ntest->nulltesttype == IS_NOT_NULL &&
+				btest->booltesttype == IS_NOT_UNKNOWN) ||
+				(ntest->nulltesttype == IS_NULL &&
+				 btest->booltesttype == IS_UNKNOWN))
+			{
+				if (equal(ntest->arg, btest->arg))
+					return true;
+			}
 		}
-		return false;			/* we can't succeed below... */
+
+		if (!weak)
+		{
+			/* row IS NOT NULL does not act in the simple way we have in mind */
+			if (ntest->nulltesttype == IS_NOT_NULL &&
+				!ntest->argisrow)
+			{
+				/* strictness of clause for foo implies foo IS NOT NULL */
+				if (clause_is_strict_for(clause, (Node *) ntest->arg, true))
+					return true;
+			}
+			return false;			/* we can't succeed below... */
+		}
 	}
 
 	/* Else try operator-related knowledge */
@@ -1272,12 +1405,116 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 			equal(((NullTest *) predicate)->arg, isnullarg))
 			return true;
 
+		if (IsA(predicate, BooleanTest))
+		{
+			BooleanTest *testpredicate = (BooleanTest *) predicate;
+
+			/* foo IS NULL refutes foo IS FALSE */
+			/* foo IS NULL refutes foo IS TRUE*/
+			if ((testpredicate->booltesttype == IS_FALSE ||
+				testpredicate->booltesttype == IS_TRUE) &&
+				equal(testpredicate->arg, isnullarg))
+				return true;
+		}
+
 		/* foo IS NULL weakly refutes any predicate that is strict for foo */
 		if (weak &&
 			clause_is_strict_for((Node *) predicate, (Node *) isnullarg, true))
 			return true;
 
 		return false;			/* we can't succeed below... */
+	}
+
+	/* Try the clause-IS-NOT-NULL case */
+	if (clause && IsA(clause, NullTest) &&
+		((NullTest *) clause)->nulltesttype == IS_NOT_NULL)
+	{
+		Expr	   *isnotnullarg = ((NullTest *) clause)->arg;
+
+		if (IsA(predicate, BooleanTest))
+		{
+			BooleanTest *testpredicate = (BooleanTest *) predicate;
+
+			/* foo IS NOT NULL refutes foo IS UNKNOWN */
+			if (testpredicate->booltesttype == IS_UNKNOWN &&
+				equal(testpredicate->arg, isnotnullarg))
+				return true;
+		}
+	}
+
+	if (IsA(predicate, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) predicate;
+
+		if (test->booltesttype == IS_UNKNOWN)
+		{
+			/*
+			 * foo IS NOT UNKNOWN refutes foo IS UNKNOWN is covered by the
+			 * clause strictness check below
+			 */
+
+			/* strictness of clause for foo refutes foo IS UNKNOWN */
+			if (clause_is_strict_for(clause, (Node *) test->arg, true))
+				return true;
+		}
+
+		if (test->booltesttype == IS_TRUE)
+		{
+			if (IsA(clause, BooleanTest))
+			{
+				BooleanTest *testclause = (BooleanTest *) clause;
+
+				/* foo IS NOT TRUE refutes foo IS TRUE */
+				/* foo IS UNKNOWN refutes foo IS TRUE */
+				if ((testclause->booltesttype == IS_NOT_TRUE ||
+					testclause->booltesttype == IS_UNKNOWN) &&
+					equal(test->arg, testclause->arg))
+					return true;
+			}
+		}
+
+	}
+
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+
+		if (test->booltesttype == IS_UNKNOWN)
+		{
+			if (IsA(predicate, BooleanTest))
+			{
+				BooleanTest *testpredicate= (BooleanTest *) predicate;
+
+				/* foo IS UNKNOWN refutes foo IS TRUE */
+				/* foo IS UNKNOWN refutes foo IS NOT UNKNOWN */
+				if ((testpredicate->booltesttype == IS_FALSE ||
+					testpredicate->booltesttype == IS_NOT_UNKNOWN) &&
+					equal(testpredicate->arg, test->arg))
+					return true;
+			}
+
+			/* foo IS UNKNOWN weakly refutes any predicate that is strict for foo */
+			if (weak &&
+				clause_is_strict_for((Node *) predicate, (Node *) test->arg, true))
+				return true;
+		}
+
+		if (test->booltesttype == IS_TRUE)
+		{
+			/* foo IS TRUE refutes NOT foo */
+			if (is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_TRUE)
+		{
+			/* foo IS NOT TRUE weakly refutes foo */
+			if (weak && equal(predicate, test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_FALSE)
+		{
+		}
 	}
 
 	/* Else try operator-related knowledge */
@@ -1498,6 +1735,15 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 		 * NULL array.  Otherwise, we're done here.
 		 */
 		return clause_is_strict_for(arraynode, subexpr, false);
+	}
+
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+
+		if (test->booltesttype == IS_TRUE || test->booltesttype == IS_FALSE ||
+			test->booltesttype == IS_NOT_UNKNOWN)
+			return true;
 	}
 
 	/*
