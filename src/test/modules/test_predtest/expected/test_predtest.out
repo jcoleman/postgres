@@ -150,6 +150,34 @@ s_r_holds         | f
 w_r_holds         | t
 
 select * from test_predtest($$
+select x is not true, not x
+from booleans
+$$);
+-[ RECORD 1 ]-----+--
+strong_implied_by | t
+weak_implied_by   | t
+strong_refuted_by | f
+weak_refuted_by   | f
+s_i_holds         | t
+w_i_holds         | t
+s_r_holds         | f
+w_r_holds         | f
+
+select * from test_predtest($$
+select not x, x is not true
+from booleans
+$$);
+-[ RECORD 1 ]-----+--
+strong_implied_by | f
+weak_implied_by   | t
+strong_refuted_by | f
+weak_refuted_by   | f
+s_i_holds         | f
+w_i_holds         | t
+s_r_holds         | f
+w_r_holds         | f
+
+select * from test_predtest($$
 select x is true, x
 from booleans
 $$);

@@ -1179,12 +1179,22 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				equal(get_notclausearg(predicate), test->arg))
 				return true;
 		}
+		else if (test->booltesttype == IS_NOT_TRUE)
+		{
+			/*
+			 * X is not true implies NOT X
+			 *
+			 * We can only prove weak implication here since null is not true
+			 * evaluates to true rather than null.
+			 */
+			if (weak && is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), test->arg))
+				return true;
+		}
 	}
 
 	/*
 	 * As well as boolean IS predicates
-	 *
-	 * Note that we have to be more careful going the opposite direction.
 	 */
 	if (IsA(predicate, BooleanTest))
 	{
@@ -1194,8 +1204,8 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 			/*
 			 * X implies X is true
 			 *
-			 * We can only do strong implication here since `null is true` is false
-			 * rather than null.
+			 * We can only prove strong implication here since `null is true`
+			 * is false rather than null.
 			 */
 			if (!weak && equal(clause, test->arg))
 				return true;
@@ -1205,10 +1215,17 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 			/*
 			 * NOT X implies X is false
 			 *
-			 * We can only do strong implication here since `not null` is null
-			 * rather than true.
+			 * We can only prove strong implication here since `not null` is
+			 * null rather than true.
 			 */
 			if (!weak && is_notclause(clause) &&
+				equal(get_notclausearg(clause), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_TRUE)
+		{
+			/* NOT X implies X is not true */
+			if (is_notclause(clause) &&
 				equal(get_notclausearg(clause), test->arg))
 				return true;
 		}
