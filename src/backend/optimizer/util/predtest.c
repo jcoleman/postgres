@@ -1191,6 +1191,17 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				equal(get_notclausearg(predicate), test->arg))
 				return true;
 		}
+		else if (test->booltesttype == IS_NOT_FALSE)
+		{
+			/*
+			 * X is not false implies X
+			 *
+			 * We can only prove weak implication here since null is not false
+			 * evaluates to true rather than null.
+			 */
+			if (weak && equal(predicate, test->arg))
+				return true;
+		}
 	}
 
 	/*
@@ -1227,6 +1238,12 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 			/* NOT X implies X is not true */
 			if (is_notclause(clause) &&
 				equal(get_notclausearg(clause), test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_NOT_FALSE)
+		{
+			/* X implies X is not false*/
+			if (equal(clause, test->arg))
 				return true;
 		}
 	}

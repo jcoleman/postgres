@@ -118,6 +118,16 @@ from booleans
 $$);
 
 select * from test_predtest($$
+select x is not false, x
+from booleans
+$$);
+
+select * from test_predtest($$
+select x, x is not false
+from booleans
+$$);
+
+select * from test_predtest($$
 select x is unknown, x
 from booleans
 $$);
