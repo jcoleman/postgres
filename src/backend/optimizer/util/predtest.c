@@ -1246,9 +1246,26 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 			if (equal(clause, test->arg))
 				return true;
 		}
-	}
 
-	/* is not false and is unknown  will give us weak implication */
+		if (test->booltesttype == IS_NOT_TRUE
+			|| test->booltesttype == IS_NOT_FALSE)
+		{
+
+			if (IsA(clause, BooleanTest))
+			{
+				BooleanTest *testclause = (BooleanTest *) clause;
+
+				/*
+				 * X is unknown weakly implies X is not true
+				 * X is unknown weakly implies X is not false
+				 */
+				if (weak && testclause->booltesttype == IS_UNKNOWN &&
+					equal(testclause->arg, test->arg))
+					return true;
+			}
+		}
+
+	}
 
 	/*
 	 * We could likewise check whether the predicate is boolean equality to a
