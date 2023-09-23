@@ -1172,6 +1172,13 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 			if (equal(predicate, test->arg))
 				return true;
 		}
+		else if (test->booltesttype == IS_FALSE)
+		{
+			/* X is false implies NOT X */
+			if (is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), test->arg))
+				return true;
+		}
 	}
 
 	/*
@@ -1182,17 +1189,32 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 	if (IsA(predicate, BooleanTest))
 	{
 		BooleanTest *test = (BooleanTest *) predicate;
-		/*
-		 * We can only do strong implication here since `null is true` is false
-		 * rather than null.
-		 */
-		if (!weak && test->booltesttype == IS_TRUE)
+		if (test->booltesttype == IS_TRUE)
 		{
-			/* X implies X is true */
-			if (equal(clause, test->arg))
+			/*
+			 * X implies X is true
+			 *
+			 * We can only do strong implication here since `null is true` is false
+			 * rather than null.
+			 */
+			if (!weak && equal(clause, test->arg))
+				return true;
+		}
+		else if (test->booltesttype == IS_FALSE)
+		{
+			/*
+			 * NOT X implies X is false
+			 *
+			 * We can only do strong implication here since `not null` is null
+			 * rather than true.
+			 */
+			if (!weak && is_notclause(clause) &&
+				equal(get_notclausearg(clause), test->arg))
 				return true;
 		}
 	}
+
+	/* is not false and is unknown  will give us weak implication */
 
 	/*
 	 * We could likewise check whether the predicate is boolean equality to a
