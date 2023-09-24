@@ -156,6 +156,16 @@ select x, x is unknown
 from booleans
 $$);
 
+select * from test_predtest($$
+select x is null, x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not null, x is not unknown
+from booleans
+$$);
+
 -- Assorted not-so-trivial refutation rules
 
 select * from test_predtest($$

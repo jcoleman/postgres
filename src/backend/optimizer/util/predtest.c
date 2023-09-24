@@ -1273,21 +1273,58 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 	 * assuming that the predicate has been through constant-folding.
 	 */
 
-	/* Next try the IS NOT NULL case */
-	if (!weak &&
-		predicate && IsA(predicate, NullTest))
+	/* Next try the IS [NOT] NULL cases */
+	if (IsA(clause, NullTest))
+	{
+		NullTest   *ntest = (NullTest *) clause;
+
+		if (IsA(predicate, BooleanTest))
+		{
+			BooleanTest* btest = (BooleanTest *) predicate;
+
+			if ((ntest->nulltesttype == IS_NOT_NULL &&
+				btest->booltesttype == IS_NOT_UNKNOWN) ||
+				(ntest->nulltesttype == IS_NULL &&
+				 btest->booltesttype == IS_UNKNOWN))
+			{
+				if (equal(ntest->arg, btest->arg))
+					return true;
+			}
+		}
+	}
+
+
+	if (IsA(predicate, NullTest))
 	{
 		NullTest   *ntest = (NullTest *) predicate;
 
-		/* row IS NOT NULL does not act in the simple way we have in mind */
-		if (ntest->nulltesttype == IS_NOT_NULL &&
-			!ntest->argisrow)
+		if (IsA(clause, BooleanTest))
 		{
-			/* strictness of clause for foo implies foo IS NOT NULL */
-			if (clause_is_strict_for(clause, (Node *) ntest->arg, true))
-				return true;
+			BooleanTest* btest = (BooleanTest *) clause;
+
+			if ((ntest->nulltesttype == IS_NOT_NULL &&
+				btest->booltesttype == IS_NOT_UNKNOWN) ||
+				(ntest->nulltesttype == IS_NULL &&
+				 btest->booltesttype == IS_UNKNOWN))
+			{
+				if (equal(ntest->arg, btest->arg))
+					return true;
+			}
 		}
-		return false;			/* we can't succeed below... */
+
+		if (!weak)
+		{
+
+			/* row IS NOT NULL does not act in the simple way we have in mind */
+			if (ntest->nulltesttype == IS_NOT_NULL &&
+				!ntest->argisrow)
+			{
+				/* strictness of clause for foo implies foo IS NOT NULL */
+				if (clause_is_strict_for(clause, (Node *) ntest->arg, true))
+					return true;
+			}
+			return false;			/* we can't succeed below... */
+		}
 	}
 
 	/* Else try operator-related knowledge */
