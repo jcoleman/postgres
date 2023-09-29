@@ -1121,20 +1121,16 @@ data. Empty in ordinary tables.</entry>
    </listitem>
    <listitem>
     <para>
-     Old versions of updated rows can be completely removed during normal
-     operation, including <command>SELECT</command>s, instead of requiring
-     periodic vacuum operations.  (This is possible because indexes
-     do not reference their <link linkend="storage-page-layout">page
-     item identifiers</link>.)
+     Old versions of updated rows may be <link linkend="storage-pruning">
+     pruned</link> during normal operation, including <command>SELECT</command>s,
+     instead of requiring periodic vacuum operations.
     </para>
    </listitem>
   </itemizedlist>
  </para>
 
  <para>
-  In summary, heap-only tuple updates can only be created
-  if columns used by indexes are not updated.  You can
-  increase the likelihood of sufficient page space for
+  You can increase the likelihood of sufficient page space for
   <acronym>HOT</acronym> updates by decreasing a table's <link
   linkend="reloption-fillfactor"><literal>fillfactor</literal></link>.
   If you don't, <acronym>HOT</acronym> updates will still happen because
@@ -1142,6 +1138,39 @@ data. Empty in ordinary tables.</entry>
   sufficient free space for new row versions.  The system view <link
   linkend="monitoring-pg-stat-all-tables-view">pg_stat_all_tables</link>
   allows monitoring of the occurrence of HOT and non-HOT updates.
+ </para>
+</sect1>
+
+<sect1 id="storage-pruning">
+
+ <title>Page Pruning</title>
+
+ <para>
+  In addition to standard vacuum operations, <productname>PostgreSQL</productname>
+  opportunistically cleans and compacts pages during normal operations,
+  including <command>SELECT</command>s.
+ </para>
+
+ <para>
+  Row versions no longer visible to any transaction have their tuple data
+  removed, but because indexes always refer to the
+  <link linkend="storage-page-layout">page item identifiers</link> of the
+  original row version, the line pointer must remain in place. If that row
+  was previously updated with a <link linkend="storage-hot">heap-only tuple</link>,
+  the line pointer has its <literal>LP_REDIRECT</literal> bit set and its
+  offset updated to the <link linkend="storage-page-layout">page item identifiers</link>
+  of the updated row; otherwise the line point has its <literal>LP_DEAD</literal>
+  bit set.
+ </para>
+
+ <para>
+  When a row is updated multiple times with
+  <link linkend="storage-hot">heap-only tuples</link>, intermediate versions
+  that are no longer visible to anyone are completely removed, and the
+  associated page item identifiers are made available for reuse. Removing
+  these rows entirely is safe because indexes always refer to the
+  <link linkend="storage-page-layout">page item identifiers</link> of the
+  original row version.
  </para>
 </sect1>
 
