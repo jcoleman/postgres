@@ -1274,26 +1274,6 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 	 */
 
 	/* Next try the IS [NOT] NULL cases */
-	if (IsA(clause, NullTest))
-	{
-		NullTest   *ntest = (NullTest *) clause;
-
-		if (IsA(predicate, BooleanTest))
-		{
-			BooleanTest* btest = (BooleanTest *) predicate;
-
-			if ((ntest->nulltesttype == IS_NOT_NULL &&
-				btest->booltesttype == IS_NOT_UNKNOWN) ||
-				(ntest->nulltesttype == IS_NULL &&
-				 btest->booltesttype == IS_UNKNOWN))
-			{
-				if (equal(ntest->arg, btest->arg))
-					return true;
-			}
-		}
-	}
-
-
 	if (IsA(predicate, NullTest))
 	{
 		NullTest   *ntest = (NullTest *) predicate;
@@ -1314,7 +1294,6 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 
 		if (!weak)
 		{
-
 			/* row IS NOT NULL does not act in the simple way we have in mind */
 			if (ntest->nulltesttype == IS_NOT_NULL &&
 				!ntest->argisrow)
@@ -1420,6 +1399,61 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 			return true;
 
 		return false;			/* we can't succeed below... */
+	}
+
+	if (IsA(predicate, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) predicate;
+
+		if (test->booltesttype == IS_UNKNOWN)
+		{
+			/*
+			 * foo IS NOT UNKNOWN refutes foo IS UNKNOWN is covered by the
+			 * clause strictness check below
+			 */
+
+			/* strictness of clause for foo refutes foo IS UNKNOWN */
+			if (clause_is_strict_for(clause, (Node *) test->arg, true))
+				return true;
+		}
+
+		/* if (test->booltesttype == IS_TRUE) */
+		/* { */
+		/* 	if (is_notclause(clause) && */
+		/* 		equal(get_notclausearg(clause), test->arg)) */
+		/* 		return true; */
+		/* } */
+
+	}
+
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+
+		/* if (test->booltesttype == IS_TRUE && */
+		/* 	equal(test->arg, extract_not_arg(predicate))) */
+		/* 	return true; */
+
+		if (test->booltesttype == IS_UNKNOWN)
+		{
+			/* foo IS UNKNOWN refutes foo IS NOT UNKNOWN */
+			if (IsA(predicate, BooleanTest) &&
+				((BooleanTest *) predicate)->booltesttype == IS_NOT_UNKNOWN &&
+				equal(test->arg, ((BooleanTest *) predicate)->arg))
+				return true;
+
+			/* foo IS UNKNOWN weakly refutes any predicate that is strict for foo */
+			if (weak &&
+				clause_is_strict_for((Node *) predicate, (Node *) test->arg, true))
+				return true;
+		}
+
+		if (test->booltesttype == IS_TRUE)
+		{
+			if (is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), test->arg))
+				return true;
+		}
 	}
 
 	/* Else try operator-related knowledge */
@@ -1640,6 +1674,15 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 		 * NULL array.  Otherwise, we're done here.
 		 */
 		return clause_is_strict_for(arraynode, subexpr, false);
+	}
+
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+
+		if (test->booltesttype == IS_TRUE || test->booltesttype == IS_FALSE ||
+			test->booltesttype == IS_NOT_UNKNOWN)
+			return true;
 	}
 
 	/*

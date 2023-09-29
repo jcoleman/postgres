@@ -107,6 +107,31 @@ from booleans
 $$);
 
 select * from test_predtest($$
+select not x, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is true, not x
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not true, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is false, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is unknown, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
 select x is false, not x
 from booleans
 $$);
@@ -157,12 +182,32 @@ from booleans
 $$);
 
 select * from test_predtest($$
+select x is not unknown, x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is unknown, x is not unknown
+from booleans
+$$);
+
+select * from test_predtest($$
 select x is null, x is unknown
 from booleans
 $$);
 
 select * from test_predtest($$
 select x is not null, x is not unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not null, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not null, x is false
 from booleans
 $$);
 
@@ -175,6 +220,16 @@ $$);
 
 select * from test_predtest($$
 select x, x is null
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is null, x is not unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not unknown, x is null
 from booleans
 $$);
 
@@ -509,4 +564,56 @@ $$);
 select * from test_predtest($$
 select x = all(opaque_array(array[1])), x is null
 from integers
+$$);
+
+-- scratchpad
+
+select * from test_predtest($$
+select x, x is false
+from booleans
+$$);
+
+select * from test_predtest($$
+select x, x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select not x, x is true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x, x is not true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is true, x is not true
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is true, x is false
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is true, x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is true, x is null
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is false, x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is false, x is null
+from booleans
 $$);
