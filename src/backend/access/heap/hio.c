@@ -707,6 +707,29 @@ loop:
 			RelationSetTargetBlock(relation, targetBlock);
 			return buffer;
 		}
+		else
+		{
+			/*
+			 * Opportunistically prune and see if that frees up enough space to
+			 * avoid needing to build a new page.
+			 */
+			heap_page_prune_opt(relation, buffer, true);
+
+			/*
+			 * If pruning cleared the PG_PAGE_FULL hint bit, then it's worth
+			 * checking free space again.
+			 */
+			if (!PageIsFull(page))
+			{
+				pageFreeSpace = PageGetHeapFreeSpace(page);
+				if (targetFreeSpace <= pageFreeSpace)
+				{
+					/* use this page as future insert target, too */
+					RelationSetTargetBlock(relation, targetBlock);
+					return buffer;
+				}
+			}
+		}
 
 		/*
 		 * Not enough space, so we must give up our page locks and pin (if
