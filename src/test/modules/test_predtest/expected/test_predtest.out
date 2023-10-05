@@ -1444,7 +1444,11 @@ w_i_holds         | t
 s_r_holds         | f
 w_r_holds         | t
 
--- scratchpad
+-- More BooleanTest proofs
+-- TODO: some of these are duplicative, but it's easier to see them all in one
+-- spot. I'm wondering if we should standardize a location for all of them,
+-- and potentially updated test_predtest to run both directions rather than
+-- needing to duplicate queries (with the two clauses swapped).
 select * from test_predtest($$
 select x, x is false
 from booleans
