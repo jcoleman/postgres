@@ -617,3 +617,18 @@ select * from test_predtest($$
 select x is false, x is null
 from booleans
 $$);
+
+select * from test_predtest($$
+select x is unknown, x is false
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is unknown, x is null
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is unknown, x is not null
+from booleans
+$$);
