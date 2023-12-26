@@ -99,6 +99,9 @@ static bool predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 											   bool weak);
 static bool predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 											   bool weak);
+static bool predicate_implied_by_bool_eq_clause(Expr *predicate,
+												Node *clause, bool boolvalue,
+												bool isnull, bool weak);
 static Node *extract_not_arg(Node *clause);
 static Node *extract_strong_not_arg(Node *clause);
 static bool clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false);
@@ -1138,28 +1141,14 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 					Assert(list_length(op->args) == 2);
 					rightop = lsecond(op->args);
 
-					/*
-					 * We might never see a null Const here, but better check
-					 * anyway
-					 */
-					if (rightop && IsA(rightop, Const) &&
-						!((Const *) rightop)->constisnull)
+					if (rightop && IsA(rightop, Const))
 					{
+						Const	*constexpr = (Const *) rightop;
 						Node	   *leftop = linitial(op->args);
 
-						if (DatumGetBool(((Const *) rightop)->constvalue))
-						{
-							/* X = true implies X */
-							if (equal(predicate, leftop))
-								return true;
-						}
-						else
-						{
-							/* X = false implies NOT X */
-							if (is_notclause(predicate) &&
-								equal(get_notclausearg(predicate), leftop))
-								return true;
-						}
+						return predicate_implied_by_bool_eq_clause(predicate, leftop,
+									   DatumGetBool(constexpr->constvalue),
+									   constexpr->constisnull, weak);
 					}
 				}
 			}
@@ -1211,6 +1200,32 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 	 * proof rules are encapsulated in operator_predicate_proof().
 	 */
 	return operator_predicate_proof(predicate, clause, false, weak);
+}
+
+
+static bool
+predicate_implied_by_bool_eq_clause(Expr *predicate, Node *clause,
+									   bool boolvalue, bool isnull, bool weak)
+{
+	if (isnull)
+		return false;
+
+	if (boolvalue)
+	{
+		/* X = true implies X */
+		if (equal(predicate, clause))
+			return true;
+	}
+	else
+	{
+		/* X = false implies NOT X */
+		if (is_notclause(predicate) &&
+				equal(get_notclausearg(predicate), clause))
+			return true;
+	}
+
+	return false;
+
 }
 
 /*
