@@ -1153,6 +1153,41 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				}
 			}
 			break;
+		case T_BooleanTest:
+			{
+				BooleanTest	*clausebtest = (BooleanTest *) clause;
+
+				switch (clausebtest->booltesttype)
+				{
+					/* TODO: convert these to if/return/break */
+					case IS_TRUE:
+						/* return predicate_implied_by_bool_eq_clause(predicate, */
+						/* 		(Node *) clausebtest->arg, true, false, weak); */
+						if (predicate_implied_by_bool_eq_clause(predicate,
+								(Node *) clausebtest->arg, true, false, weak))
+							return true;
+						break;
+					case IS_FALSE:
+						if (predicate_implied_by_bool_eq_clause(predicate,
+								(Node *) clausebtest->arg, false, false, weak))
+							return true;
+						break;
+					case IS_NOT_TRUE:
+						if (weak && predicate_implied_by_bool_eq_clause(predicate,
+								(Node *) clausebtest->arg, false, false, weak))
+							return true;
+						break;
+					case IS_NOT_FALSE:
+						if (weak && predicate_implied_by_bool_eq_clause(predicate,
+								(Node *) clausebtest->arg, true, false, weak))
+							return true;
+						break;
+					case IS_UNKNOWN:
+					case IS_NOT_UNKNOWN:
+						break;
+				}
+			}
+			break;
 		default:
 			break;
 	}
@@ -1162,30 +1197,136 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 	{
 		case T_NullTest:
 			{
-				NullTest   *ntest = (NullTest *) predicate;
+				NullTest   *predntest = (NullTest *) predicate;
 
-				switch (ntest->nulltesttype)
+				/* row IS NOT NULL does not act in the simple way we have in
+				 * mind */
+				if (predntest->argisrow)
+					return false;
+
+				switch (predntest->nulltesttype)
 				{
 					case IS_NOT_NULL:
+						{
+							if (IsA(clause, BooleanTest))
+							{
+								BooleanTest* clausebtest = (BooleanTest *) clause;
 
-						/*
-						 * If the predicate is of the form "foo IS NOT NULL",
-						 * and we are considering strong implication, we can
-						 * conclude that the predicate is implied if the
-						 * clause is strict for "foo", i.e., it must yield
-						 * false or NULL when "foo" is NULL.  In that case
-						 * truth of the clause ensures that "foo" isn't NULL.
-						 * (Again, this is a safe conclusion because "foo"
-						 * must be immutable.)  This doesn't work for weak
-						 * implication, though.  Also, "row IS NOT NULL" does
-						 * not act in the simple way we have in mind.
-						 */
-						if (!weak &&
-							!ntest->argisrow &&
-							clause_is_strict_for(clause, (Node *) ntest->arg, true))
-							return true;
+								/* x IS NOT NULL is implied by
+								 * x IS NOT UNKNOWN */
+								if (predntest->nulltesttype == IS_NOT_NULL &&
+									clausebtest->booltesttype == IS_NOT_UNKNOWN &&
+									equal(predntest->arg, clausebtest->arg))
+									return true;
+							}
+
+							/*
+							 * If the predicate is of the form "foo IS NOT
+							 * NULL", and we are considering strong
+							 * implication, we can conclude that the predicate
+							 * is implied if the clause is strict for "foo",
+							 * i.e., it must yield false or NULL when "foo" is
+							 * NULL.  In that case truth of the clause ensures
+							 * that "foo" isn't NULL.  (Again, this is a safe
+							 * conclusion because "foo" must be immutable.)
+							 * This doesn't work for weak implication, though.
+							 */
+							if (!weak &&
+								clause_is_strict_for(clause, (Node *) predntest->arg, true))
+								return true;
+						}
 						break;
 					case IS_NULL:
+						if (IsA(clause, BooleanTest))
+						{
+							BooleanTest* clausebtest = (BooleanTest *) clause;
+
+							/* x IS NULL is implied by x IS UNKNOWN */
+							if (predntest->nulltesttype == IS_NULL &&
+								clausebtest->booltesttype == IS_UNKNOWN &&
+								equal(predntest->arg, clausebtest->arg))
+								return true;
+						}
+						break;
+				}
+			}
+			break;
+		case T_BooleanTest:
+			{
+				BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+				switch (predbtest->booltesttype)
+				{
+					case IS_TRUE:
+						/*
+						 * X implies X is true
+						 *
+						 * We can only prove strong implication here since
+						 * `null is true` is false rather than null.
+						 */
+						if (!weak && equal(clause, predbtest->arg))
+							return true;
+						break;
+					case IS_FALSE:
+						/*
+						 * NOT X implies X is false
+						 *
+						 * We can only prove strong implication here since `not
+						 * null` is null rather than true.
+						 */
+						if (!weak && is_notclause(clause) &&
+								equal(get_notclausearg(clause), predbtest->arg))
+							return true;
+						break;
+					case IS_NOT_TRUE:
+						{
+							/* NOT X implies X is not true */
+							if (is_notclause(clause) &&
+									equal(get_notclausearg(clause), predbtest->arg))
+								return true;
+
+							if (IsA(clause, BooleanTest))
+							{
+								BooleanTest *clausebtest = (BooleanTest *) clause;
+
+								/* X is unknown weakly implies X is not true */
+								if (weak && clausebtest->booltesttype == IS_UNKNOWN &&
+										equal(clausebtest->arg, predbtest->arg))
+									return true;
+							}
+						}
+						break;
+					case IS_NOT_FALSE:
+						{
+							/* X implies X is not false*/
+							if (equal(clause, predbtest->arg))
+								return true;
+
+							if (IsA(clause, BooleanTest))
+							{
+								BooleanTest *clausebtest = (BooleanTest *) clause;
+
+								/* X is unknown weakly implies X is not false */
+								if (weak && clausebtest->booltesttype == IS_UNKNOWN &&
+										equal(clausebtest->arg, predbtest->arg))
+									return true;
+							}
+						}
+						break;
+					case IS_UNKNOWN:
+						if (IsA(clause, NullTest))
+						{
+							NullTest   *clausentest = (NullTest *) clause;
+
+							/* X IS NULL implies X is unknown */
+							if (clausentest->nulltesttype == IS_NULL &&
+									equal(clausentest->arg, predbtest->arg))
+								return true;
+						}
+						break;
+					case IS_NOT_UNKNOWN:
+						/* TODO: Do I need to copy the above? Or explain why we
+						 * don't need it (tests don't change with it) */
 						break;
 				}
 			}
@@ -1295,6 +1436,21 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 												equal(predntest->arg, clausentest->arg))
 											return true;
 									}
+								case T_BooleanTest:
+									{
+										BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+										switch (predbtest->booltesttype)
+										{
+											case IS_TRUE:
+											case IS_FALSE:
+												if (equal(predbtest->arg, clausentest->arg))
+													return true;
+												break;
+											default:
+												break;
+										}
+									}
 								default:
 									break;
 							}
@@ -1309,6 +1465,81 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						}
 						break;
 					case IS_NOT_NULL:
+						if (IsA(predicate, BooleanTest))
+						{
+							BooleanTest *predbtest = (BooleanTest *) predicate;
+
+							/* foo IS NOT NULL refutes foo IS UNKNOWN */
+							if (predbtest->booltesttype == IS_UNKNOWN &&
+									equal(predbtest->arg, clausentest->arg))
+								return true;
+						}
+						break;
+				}
+			}
+		case T_BooleanTest:
+			{
+				BooleanTest 	*clausebtest = (BooleanTest *) clause;
+
+				switch (clausebtest->booltesttype)
+				{
+					case IS_TRUE:
+						/* TODO: doesn't change tests? */
+						/* foo IS TRUE refutes NOT foo */
+						/* if (is_notclause(predicate) && */
+						/* 	equal(get_notclausearg(predicate), clausebtest->arg)) */
+						/* 	return true; */
+						break;
+					case IS_NOT_TRUE:
+						/* foo IS NOT TRUE weakly refutes foo */
+						if (weak && equal(predicate, clausebtest->arg))
+							return true;
+						break;
+					case IS_FALSE:
+						if (IsA(predicate, BooleanTest))
+						{
+							BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+							/* foo IS UNKNOWN refutes foo IS TRUE */
+							/* foo IS UNKNOWN refutes foo IS NOT UNKNOWN */
+							if (predbtest->booltesttype == IS_UNKNOWN &&
+								equal(predbtest->arg, clausebtest->arg))
+								return true;
+						}
+						break;
+					case IS_NOT_FALSE:
+						break;
+					case IS_UNKNOWN:
+						{
+							if (IsA(predicate, BooleanTest))
+							{
+								BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+								/* foo IS UNKNOWN refutes foo IS TRUE */
+								/* foo IS UNKNOWN refutes foo IS NOT UNKNOWN */
+								if ((predbtest->booltesttype == IS_FALSE ||
+									predbtest->booltesttype == IS_NOT_UNKNOWN) &&
+									equal(predbtest->arg, clausebtest->arg))
+									return true;
+							}
+
+							/* foo IS UNKNOWN weakly refutes any predicate that
+							 * is strict for foo */
+							if (weak &&
+								clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
+								return true;
+						}
+						break;
+					case IS_NOT_UNKNOWN:
+						if (IsA(predicate, BooleanTest))
+						{
+							BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+							/* foo IS NOT UNKNOWN refutes foo IS UNKNOWN */
+							if (predbtest->booltesttype == IS_UNKNOWN &&
+								equal(predbtest->arg, clausebtest->arg))
+								return true;
+						}
 						break;
 				}
 			}
@@ -1371,6 +1602,40 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 				}
 			}
 			break;
+		case T_BooleanTest:
+			{
+				BooleanTest 	*predbtest = (BooleanTest *) predicate;
+
+				switch (predbtest->booltesttype)
+				{
+					case IS_TRUE:
+						if (IsA(clause, BooleanTest))
+						{
+							BooleanTest *clausebtest = (BooleanTest *) clause;
+
+							/* foo IS NOT TRUE refutes foo IS TRUE */
+							/* foo IS UNKNOWN refutes foo IS TRUE */
+							if ((clausebtest->booltesttype == IS_NOT_TRUE ||
+								clausebtest->booltesttype == IS_UNKNOWN) &&
+								equal(predbtest->arg, clausebtest->arg))
+								return true;
+						}
+						break;
+					case IS_UNKNOWN:
+						/* TODO: does this do anything? */
+						/*
+						 * foo IS NOT UNKNOWN refutes foo IS UNKNOWN is covered by the
+						 * clause strictness check below
+						 */
+
+						/* strictness of clause for foo refutes foo IS UNKNOWN */
+						/* if (clause_is_strict_for(clause, (Node *) predbtest->arg, true)) */
+						/* 	return true; */
+						break;
+					default:
+						break;
+				}
+			}
 		default:
 			break;
 	}
@@ -1596,6 +1861,24 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 		 * NULL array.  Otherwise, we're done here.
 		 */
 		return clause_is_strict_for(arraynode, subexpr, false);
+	}
+
+	/* TODO: switch statements */
+	if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *test = (BooleanTest *) clause;
+
+		switch (test->booltesttype)
+		{
+			case IS_TRUE:
+			case IS_FALSE:
+			case IS_NOT_UNKNOWN:
+				return true;
+			case IS_NOT_TRUE:
+			case IS_NOT_FALSE:
+			case IS_UNKNOWN:
+				return false;
+		}
 	}
 
 	/*
