@@ -1491,9 +1491,22 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						/* 	return true; */
 						break;
 					case IS_NOT_TRUE:
-						/* foo IS NOT TRUE weakly refutes foo */
-						if (weak && equal(predicate, clausebtest->arg))
-							return true;
+						{
+							if (IsA(predicate, BooleanTest))
+							{
+								BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+								/* foo IS NOT TRUE refutes foo IS TRUE */
+								if (predbtest->booltesttype == IS_TRUE &&
+									equal(predbtest->arg, clausebtest->arg))
+									return true;
+							}
+
+							/* foo IS NOT TRUE weakly refutes foo */
+							if (weak && equal(predicate, clausebtest->arg))
+								return true;
+
+						}
 						break;
 					case IS_FALSE:
 						if (IsA(predicate, BooleanTest))
@@ -1516,15 +1529,24 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 								BooleanTest	*predbtest = (BooleanTest *) predicate;
 
 								/* foo IS UNKNOWN refutes foo IS TRUE */
+								/* foo IS UNKNOWN refutes foo IS FALSE */
 								/* foo IS UNKNOWN refutes foo IS NOT UNKNOWN */
-								if ((predbtest->booltesttype == IS_FALSE ||
-									predbtest->booltesttype == IS_NOT_UNKNOWN) &&
-									equal(predbtest->arg, clausebtest->arg))
-									return true;
+								switch (predbtest->booltesttype)
+								{
+									case IS_TRUE:
+									case IS_FALSE:
+									case IS_NOT_UNKNOWN:
+										if (equal(predbtest->arg, clausebtest->arg))
+											return true;
+										break;
+									default:
+										break;
+								}
 							}
 
 							/* foo IS UNKNOWN weakly refutes any predicate that
 							 * is strict for foo */
+							/* TODO: should we set allow_false to false? */
 							if (weak &&
 								clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
 								return true;
@@ -1535,9 +1557,11 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						{
 							BooleanTest	*predbtest = (BooleanTest *) predicate;
 
+							/* TODO: do we need a more expansive clause strictness check? */
+							/* TODO: add test for case where allow_false needs to be set to false */
 							/* foo IS NOT UNKNOWN refutes foo IS UNKNOWN */
 							if (predbtest->booltesttype == IS_UNKNOWN &&
-								equal(predbtest->arg, clausebtest->arg))
+								clause_is_strict_for((Node *) clause, (Node *) predbtest->arg, false))
 								return true;
 						}
 						break;
@@ -1608,19 +1632,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 
 				switch (predbtest->booltesttype)
 				{
-					case IS_TRUE:
-						if (IsA(clause, BooleanTest))
-						{
-							BooleanTest *clausebtest = (BooleanTest *) clause;
-
-							/* foo IS NOT TRUE refutes foo IS TRUE */
-							/* foo IS UNKNOWN refutes foo IS TRUE */
-							if ((clausebtest->booltesttype == IS_NOT_TRUE ||
-								clausebtest->booltesttype == IS_UNKNOWN) &&
-								equal(predbtest->arg, clausebtest->arg))
-								return true;
-						}
-						break;
 					case IS_UNKNOWN:
 						/* TODO: does this do anything? */
 						/*
