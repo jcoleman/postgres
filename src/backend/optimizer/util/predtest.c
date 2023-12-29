@@ -1212,10 +1212,20 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 							{
 								BooleanTest* clausebtest = (BooleanTest *) clause;
 
-								/* x IS NOT NULL is implied by
-								 * x IS NOT UNKNOWN */
-								if (predntest->nulltesttype == IS_NOT_NULL &&
-									clausebtest->booltesttype == IS_NOT_UNKNOWN &&
+								/*
+								 * Because BooleanTest clauses always evaluate
+								 * to true or false (and never NULL), we can
+								 * conclude that such a clause with "foo" as
+								 * its argument will always imply "foo IS NOT
+								 * NULL" unless the boolean test is "IS UNKNOWN"
+								 * (since UNKNOWN is a boolean-specific NULL
+								 * alias).
+								 *
+								 * This also covers the more obvious case of
+								 * "x IS NOT NULL" being implied by "x IS NOT
+								 * UNKNOWN".
+								 */
+								if (clausebtest->booltesttype != IS_UNKNOWN &&
 									equal(predntest->arg, clausebtest->arg))
 									return true;
 							}

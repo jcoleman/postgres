@@ -580,7 +580,7 @@ from booleans
 $$);
 -[ RECORD 1 ]-----+--
 strong_implied_by | t
-weak_implied_by   | f
+weak_implied_by   | t
 strong_refuted_by | f
 weak_refuted_by   | f
 s_i_holds         | t
@@ -594,7 +594,7 @@ from booleans
 $$);
 -[ RECORD 1 ]-----+--
 strong_implied_by | t
-weak_implied_by   | f
+weak_implied_by   | t
 strong_refuted_by | f
 weak_refuted_by   | f
 s_i_holds         | t
