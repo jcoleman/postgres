@@ -191,8 +191,33 @@ select x is unknown, x is not unknown
 from booleans
 $$);
 
+-- testing 1
 select * from test_predtest($$
-select strictf(x, x) is unknown, x is not unknown
+select strictf(x, y) is unknown, x is not unknown
+from booleans
+$$);
+
+-- testing 2
+select * from test_predtest($$
+select strictf(x, y) is unknown, strictf(x, y) is not unknown
+from booleans
+$$);
+
+-- testing 3
+select * from test_predtest($$
+select x is unknown, strictf(x, y) is not unknown
+from booleans
+$$);
+
+-- testing 4
+select * from test_predtest($$
+select (x is true) is unknown, x is not unknown
+from booleans
+$$);
+
+-- testing 5
+select * from test_predtest($$
+select x is unknown, (x is true) is not unknown
 from booleans
 $$);
 

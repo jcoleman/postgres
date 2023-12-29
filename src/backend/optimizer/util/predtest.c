@@ -1456,7 +1456,8 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							}
 
 							/* foo IS NULL weakly refutes any predicate that is
-							 * strict for foo */
+							 * strict for foo; see notes in implication for
+							 * foo IS NOT NULL */
 							if (weak &&
 									clause_is_strict_for((Node *) predicate, (Node *) clausentest->arg, true))
 								return true;
@@ -1545,7 +1546,8 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							}
 
 							/* foo IS UNKNOWN weakly refutes any predicate that
-							 * is strict for foo */
+							 * is strict for foo; see notes in implication for
+							 * foo IS NOT NULL */
 							/* TODO: should we set allow_false to false? */
 							if (weak &&
 								clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
@@ -1553,15 +1555,35 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						}
 						break;
 					case IS_NOT_UNKNOWN:
-						if (IsA(predicate, BooleanTest))
 						{
-							BooleanTest	*predbtest = (BooleanTest *) predicate;
+							if (IsA(predicate, BooleanTest))
+							{
+								BooleanTest	*predbtest = (BooleanTest *) predicate;
+
+								/* foo IS NOT UNKNOWN refutes foo IS UNKNOWN */
+								if (predbtest->booltesttype == IS_UNKNOWN &&
+									equal(clausebtest->arg, predbtest->arg))
+									return true;
+
+								/* TODO: write comment */
+								/* TODO: does this apply to other combinations? */
+
+								/*
+								 * INVALID:
+								 * clause: x is not unknown
+								 * predicate: strictf(x, x) is unknown
+								 * */
+
+								/* if (predbtest->booltesttype == IS_UNKNOWN && */
+								/* 	clause_is_strict_for((Node *) predbtest->arg, (Node *) clausebtest->arg, true)) */
+								/* 	return true; */
+							}
 
 							/* TODO: do we need a more expansive clause strictness check? */
 							/* TODO: add test for case where allow_false needs to be set to false */
-							/* foo IS NOT UNKNOWN refutes foo IS UNKNOWN */
-							if (predbtest->booltesttype == IS_UNKNOWN &&
-								clause_is_strict_for((Node *) clause, (Node *) predbtest->arg, false))
+
+
+							if (clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
 								return true;
 						}
 						break;
@@ -1611,8 +1633,8 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							/*
 							 * When the predicate is of the form "foo IS NULL", we can
 							 * conclude that the predicate is refuted if the clause is
-							 * strict for "foo" (see notes for implication
-							 * case). That works for either strong or weak
+							 * strict for "foo"; see notes in implication for
+							 * foo IS NOT NULL. That works for either strong or weak
 							 * refutation.
 							 */
 							if (clause_is_strict_for(clause, (Node *) predntest->arg, true))
@@ -1633,6 +1655,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 				switch (predbtest->booltesttype)
 				{
 					case IS_UNKNOWN:
+						{
 						/* TODO: does this do anything? */
 						/*
 						 * foo IS NOT UNKNOWN refutes foo IS UNKNOWN is covered by the
@@ -1640,8 +1663,42 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						 */
 
 						/* strictness of clause for foo refutes foo IS UNKNOWN */
-						/* if (clause_is_strict_for(clause, (Node *) predbtest->arg, true)) */
-						/* 	return true; */
+
+						/*
+						 * For a predicate "foo is unknown" to be true "foo"
+						 * must be null, but if the clause is strict for "foo"
+						 * then forcing "foo" to null results in the clause
+						 * evaluating to false (or at least null, in the weak
+						 * refutation case), therefore when the clause is
+						 * strict for "foo" we can prove both strong and weak
+						 * refutation of the predicate.
+						 *
+						 * For example:
+						 * x is unknown is refuted by strictf(x, y)
+						 */
+
+							/* requires permutation in clause_is_strict_for()
+							 * clause: x is not unknown
+							 * predicate: strictf(x, x) is unknown */
+						if (clause_is_strict_for(clause, (Node *) predbtest->arg, true))
+							return true;
+
+						/*
+						 * clause: x is not unknown
+						 * predicate: (x is true) is unknown
+						 */
+						/* TODO: applies to IS NULL also */
+						/* TODO: implication for IS NOT UNKNOWN */
+						/* TODO: do we have a method already that proves an expression is not null? */
+						if (IsA(clause, BooleanTest))
+						{
+							BooleanTest *clausebtest = (BooleanTest *) clause;
+
+							if (clausebtest->booltesttype == IS_NOT_UNKNOWN &&
+								IsA(predbtest->arg, BooleanTest))
+								return true;
+						}
+						}
 						break;
 					default:
 						break;
@@ -1875,7 +1932,8 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 	}
 
 	/* TODO: switch statements */
-	if (IsA(clause, BooleanTest))
+	/* TODO: respect allow_false */
+	if (allow_false && IsA(clause, BooleanTest))
 	{
 		BooleanTest *test = (BooleanTest *) clause;
 
@@ -1884,7 +1942,14 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 			case IS_TRUE:
 			case IS_FALSE:
 			case IS_NOT_UNKNOWN:
-				return true;
+				/* TODO: write a comment to justify having both permutations */
+				return clause_is_strict_for((Node *) test->arg, subexpr, false);
+				/* return clause_is_strict_for((Node *) test->arg, subexpr, false) || */
+				/* 	clause_is_strict_for(subexpr, (Node *) test->arg, false); */
+			/*
+			 * null is not true, null is not false, and null is unknown are
+			 * true, hence we know they can't be strict.
+			 */
 			case IS_NOT_TRUE:
 			case IS_NOT_FALSE:
 			case IS_UNKNOWN:

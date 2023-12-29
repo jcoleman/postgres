@@ -118,6 +118,12 @@ test_predtest(PG_FUNCTION_ARGS)
 			w_r_holds = false;
 	}
 
+	/* TODO */
+	/* if (s_i_holds && !w_i_holds) */
+	/* 	elog(ERROR, "s_i_holds was true; w_i_holds cannot be false"); */
+	if (s_r_holds && !w_r_holds)
+		elog(ERROR, "s_r_holds was true; w_r_holds cannot be false");
+
 	/*
 	 * Now, dig the clause querytrees out of the plan, and see what predtest.c
 	 * does with them.
@@ -178,6 +184,12 @@ test_predtest(PG_FUNCTION_ARGS)
 		elog(WARNING, "strong_refuted_by result is incorrect");
 	if (weak_refuted_by && !w_r_holds)
 		elog(WARNING, "weak_refuted_by result is incorrect");
+
+	/* TODO */
+	/* if (strong_implied_by && !weak_implied_by) */
+	/* 	elog(WARNING, "strong_implied_by was true; weak_implied_by cannot be false"); */
+	if (strong_refuted_by && !weak_refuted_by)
+		elog(WARNING, "strong_refuted_by was true; weak_refuted_by cannot be false");
 
 	/*
 	 * Clean up and return a record of the results.
