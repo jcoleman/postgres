@@ -201,6 +201,11 @@ predicate_implied_by(List *predicate_list, List *clause_list,
  * (i.e., B must yield false or NULL).  We use this to detect mutually
  * contradictory WHERE clauses.
  *
+ * A notable difference between implication and refutation proofs is that
+ * strong/weak refutations don't vary the input of A (both must be true) but
+ * vary the allowed outcomes of B (false vs. non-truth), while for implications
+ * we vary both A (truth vs. non-falsity) and B (truth vs. non-falsity).
+ *
  * Weak refutation can be proven in some cases where strong refutation doesn't
  * hold, so it's useful to use it when possible.  We don't currently have
  * support for disproving one CHECK constraint based on another one, nor for
@@ -1239,7 +1244,9 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 							 * NULL.  In that case truth of the clause ensures
 							 * that "foo" isn't NULL.  (Again, this is a safe
 							 * conclusion because "foo" must be immutable.)
-							 * This doesn't work for weak implication, though.
+							 * This doesn't work for weak implication, though,
+							 * since the clause yielding NULL means the
+							 * predicate will be evaluate to false.
 							 */
 							if (!weak &&
 								clause_is_strict_for(clause, (Node *) predntest->arg, true))

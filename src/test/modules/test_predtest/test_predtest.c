@@ -118,9 +118,19 @@ test_predtest(PG_FUNCTION_ARGS)
 			w_r_holds = false;
 	}
 
-	/* TODO */
-	/* if (s_i_holds && !w_i_holds) */
-	/* 	elog(ERROR, "s_i_holds was true; w_i_holds cannot be false"); */
+	/* Because weak refutation proofs are a strict subset of strong refutation
+	 * proofs (since for "A => B" "A" is always true) we ought never have strong
+	 * refutation hold when weak refutation does not.
+	 *
+	 * We can't make the same assertion for implication since moving from strong
+	 * to weak implication expands the allowed values of "A" from true to either
+	 * true or NULL.
+	 *
+	 * If this fails it constitutes a bug not with the proofs but with either
+	 * this test module or a more core part of expression evaluation since we
+	 * are validating the logical correctness of the observed result rather
+	 * than the proof.
+	 */
 	if (s_r_holds && !w_r_holds)
 		elog(ERROR, "s_r_holds was true; w_r_holds cannot be false");
 
@@ -185,11 +195,18 @@ test_predtest(PG_FUNCTION_ARGS)
 	if (weak_refuted_by && !w_r_holds)
 		elog(WARNING, "weak_refuted_by result is incorrect");
 
-	/* TODO */
-	/* if (strong_implied_by && !weak_implied_by) */
-	/* 	elog(WARNING, "strong_implied_by was true; weak_implied_by cannot be false"); */
+	/*
+	 * As with our earlier check of the logical consistency of whether strong
+	 * and weak refutation hold, we ought never prove strong refutation without
+	 * also proving weak refutation.
+	 *
+	 * Also as earlier we cannot make the same guarantee about implication
+	 * proofs.
+	 *
+	 * A warning here suggests a bug in the proof code.
+	 */
 	if (strong_refuted_by && !weak_refuted_by)
-		elog(WARNING, "strong_refuted_by was true; weak_refuted_by cannot be false");
+		elog(WARNING, "strong_refuted_by was true; weak_refuted_by should also be proven");
 
 	/*
 	 * Clean up and return a record of the results.
