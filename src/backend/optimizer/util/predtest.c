@@ -1218,6 +1218,11 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 								BooleanTest* clausebtest = (BooleanTest *) clause;
 
 								/*
+								 * TODO: applies to IS NOT UNKNOWN also
+								 * TODO: applies to IS DISTINCT FROM also
+								 * TODO: extract; recurse?
+								 */
+								/*
 								 * Because BooleanTest clauses always evaluate
 								 * to true or false (and never NULL), we can
 								 * conclude that such a clause with "foo" as
@@ -1704,15 +1709,18 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						 * clause: x is not unknown
 						 * predicate: (x is true) is unknown
 						 */
+						/* TODO: delete this in favor of recursion (if we add it) */
 						/* TODO: applies to IS NULL also */
 						/* TODO: implication for IS NOT UNKNOWN */
-						/* TODO: do we have a method already that proves an expression is not null? */
+						/* TODO: do we have a method already that proves an expression is not null?
+						 * do we want to recurse into proving that it's is not null? */
 						if (IsA(clause, BooleanTest))
 						{
 							BooleanTest *clausebtest = (BooleanTest *) clause;
 
 							if (clausebtest->booltesttype == IS_NOT_UNKNOWN &&
-								IsA(predbtest->arg, BooleanTest))
+								IsA(predbtest->arg, BooleanTest) &&
+								clause_is_strict_for((Node *) predbtest->arg, (Node *) clausebtest->arg, true))
 								return true;
 						}
 						}
