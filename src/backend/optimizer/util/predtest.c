@@ -1250,8 +1250,8 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 							 * that "foo" isn't NULL.  (Again, this is a safe
 							 * conclusion because "foo" must be immutable.)
 							 * This doesn't work for weak implication, though,
-							 * since the clause yielding NULL means the
-							 * predicate will be evaluate to false.
+							 * since the clause yielding the non-false value
+							 * NULL means the predicate will evaluate to false.
 							 */
 							if (!weak &&
 								clause_is_strict_for(clause, (Node *) predntest->arg, true))
@@ -1264,8 +1264,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 							BooleanTest* clausebtest = (BooleanTest *) clause;
 
 							/* x IS NULL is implied by x IS UNKNOWN */
-							if (predntest->nulltesttype == IS_NULL &&
-								clausebtest->booltesttype == IS_UNKNOWN &&
+							if (clausebtest->booltesttype == IS_UNKNOWN &&
 								equal(predntest->arg, clausebtest->arg))
 								return true;
 						}
