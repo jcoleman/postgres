@@ -1748,7 +1748,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 				{
 					case IS_UNKNOWN:
 						{
-						/* TODO: does this do anything? */
 						/*
 						 * foo IS NOT UNKNOWN refutes foo IS UNKNOWN is covered by the
 						 * clause strictness check below
@@ -1768,10 +1767,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						 * For example:
 						 * x is unknown is refuted by strictf(x, y)
 						 */
-
-							/* requires permutation in clause_is_strict_for()
-							 * clause: x is not unknown
-							 * predicate: strictf(x, x) is unknown */
 						if (clause_is_strict_for(clause, (Node *) predbtest->arg, true))
 							return true;
 
