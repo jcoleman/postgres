@@ -1662,37 +1662,22 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						}
 						break;
 					case IS_NOT_UNKNOWN:
+						if (IsA(predicate, BooleanTest))
 						{
-							if (IsA(predicate, BooleanTest))
-							{
-								BooleanTest	*predbtest = (BooleanTest *) predicate;
+							BooleanTest	*predbtest = (BooleanTest *) predicate;
 
-								/* foo IS NOT UNKNOWN refutes foo IS UNKNOWN */
-								if (predbtest->booltesttype == IS_UNKNOWN &&
-									equal(clausebtest->arg, predbtest->arg))
-									return true;
-
-								/* TODO: write comment */
-								/* TODO: does this apply to other combinations? */
-
-								/*
-								 * INVALID:
-								 * clause: x is not unknown
-								 * predicate: strictf(x, x) is unknown
-								 * */
-
-								/* if (predbtest->booltesttype == IS_UNKNOWN && */
-								/* 	clause_is_strict_for((Node *) predbtest->arg, (Node *) clausebtest->arg, true)) */
-								/* 	return true; */
-							}
-
-							/* TODO: do we need a more expansive clause strictness check? */
-							/* TODO: add test for case where allow_false needs to be set to false */
-
-
-							if (clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
+							/* foo IS NOT UNKNOWN refutes foo IS UNKNOWN */
+							if (predbtest->booltesttype == IS_UNKNOWN &&
+								equal(clausebtest->arg, predbtest->arg))
 								return true;
+
 						}
+
+						/*
+						 * foo IS NOT UNKNOWN refutes foo IS NULL is handled
+						 * elsewhere.
+						 */
+
 						break;
 				}
 			}

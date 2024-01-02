@@ -623,6 +623,11 @@ from booleans
 $$);
 
 select * from test_predtest($$
+select strictf(x, y), x is not unknown
+from booleans
+$$);
+
+select * from test_predtest($$
 select not x, x is true
 from booleans
 $$);
