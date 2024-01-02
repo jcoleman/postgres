@@ -1164,10 +1164,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 
 				switch (clausebtest->booltesttype)
 				{
-					/* TODO: convert these to if/return/break */
 					case IS_TRUE:
-						/* return predicate_implied_by_bool_eq_clause(predicate, */
-						/* 		(Node *) clausebtest->arg, true, false, weak); */
 						if (predicate_implied_by_bool_eq_clause(predicate,
 								(Node *) clausebtest->arg, true, false, weak))
 							return true;
@@ -1421,6 +1418,8 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 	/* Our remaining strategies are all clause-type-specific */
 
 	/*
+	 * TODO: break up comment.
+	 *
 	 * A clause "foo IS NULL" refutes a predicate "foo IS NOT NULL" in all
 	 * cases.  If we are considering weak refutation, it also refutes a
 	 * predicate that is strict for "foo", since then the predicate must yield
@@ -1506,11 +1505,13 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 				switch (clausebtest->booltesttype)
 				{
 					case IS_TRUE:
-						/* TODO: doesn't change tests? */
-						/* foo IS TRUE refutes NOT foo */
-						/* if (is_notclause(predicate) && */
-						/* 	equal(get_notclausearg(predicate), clausebtest->arg)) */
-						/* 	return true; */
+						/*
+						 * We've already previously checked for the clause
+						 * being a NOT arg and determined refutation based on
+						 * implication of the predicate by that arg. That check
+						 * handles the case "foos IS TRUE" refuting "NOT foo",
+						 * so we don't have to do anything special here.
+						 */
 						break;
 					case IS_NOT_TRUE:
 						{
@@ -1566,10 +1567,17 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 								}
 							}
 
-							/* foo IS UNKNOWN weakly refutes any predicate that
-							 * is strict for foo; see notes in implication for
-							 * foo IS NOT NULL */
-							/* TODO: should we set allow_false to false? */
+							/*
+							 * Truth of the clause "foo IS UNKNOWN" tells us
+							 * that "foo" is null, and if the predicate is
+							 * strict for "foo", then "foo" being null will
+							 * mean the predicate will evaluate to non-true,
+							 * therefore proving weak refutation.
+							 *
+							 * This doesn't work for strong refutation, however,
+							 * since evaluating the predicate with "foo" set to
+							 * null may result in "null" rather than "false".
+							 */
 							if (weak &&
 								clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
 								return true;
@@ -1956,7 +1964,11 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 	}
 
 	/* TODO: switch statements */
-	/* TODO: respect allow_false */
+
+	/*
+	 * BooleanTest expressions never evaluate to null so we can't do anything
+	 * if allow_false isn't true.
+	 */
 	if (allow_false && IsA(clause, BooleanTest))
 	{
 		BooleanTest *test = (BooleanTest *) clause;
@@ -1966,10 +1978,7 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 			case IS_TRUE:
 			case IS_FALSE:
 			case IS_NOT_UNKNOWN:
-				/* TODO: write a comment to justify having both permutations */
 				return clause_is_strict_for((Node *) test->arg, subexpr, false);
-				/* return clause_is_strict_for((Node *) test->arg, subexpr, false) || */
-				/* 	clause_is_strict_for(subexpr, (Node *) test->arg, false); */
 			/*
 			 * null is not true, null is not false, and null is unknown are
 			 * true, hence we know they can't be strict.
