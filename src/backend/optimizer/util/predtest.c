@@ -102,6 +102,8 @@ static bool predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 static bool predicate_implied_by_bool_eq_clause(Expr *predicate,
 												Node *clause, bool boolvalue,
 												bool isnull, bool weak);
+static bool predicate_implied_not_null_by_clause(Expr *predicate, Node *clause,
+												 bool weak);
 static Node *extract_not_arg(Node *clause);
 static Node *extract_strong_not_arg(Node *clause);
 static bool clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false);
@@ -1209,51 +1211,9 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				switch (predntest->nulltesttype)
 				{
 					case IS_NOT_NULL:
-						{
-							if (IsA(clause, BooleanTest))
-							{
-								BooleanTest* clausebtest = (BooleanTest *) clause;
-
-								/*
-								 * TODO: applies to IS NOT UNKNOWN also
-								 * TODO: applies to IS DISTINCT FROM also
-								 * TODO: extract; recurse?
-								 */
-								/*
-								 * Because BooleanTest clauses always evaluate
-								 * to true or false (and never NULL), we can
-								 * conclude that such a clause with "foo" as
-								 * its argument will always imply "foo IS NOT
-								 * NULL" unless the boolean test is "IS UNKNOWN"
-								 * (since UNKNOWN is a boolean-specific NULL
-								 * alias).
-								 *
-								 * This also covers the more obvious case of
-								 * "x IS NOT NULL" being implied by "x IS NOT
-								 * UNKNOWN".
-								 */
-								if (clausebtest->booltesttype != IS_UNKNOWN &&
-									equal(predntest->arg, clausebtest->arg))
-									return true;
-							}
-
-							/*
-							 * If the predicate is of the form "foo IS NOT
-							 * NULL", and we are considering strong
-							 * implication, we can conclude that the predicate
-							 * is implied if the clause is strict for "foo",
-							 * i.e., it must yield false or NULL when "foo" is
-							 * NULL.  In that case truth of the clause ensures
-							 * that "foo" isn't NULL.  (Again, this is a safe
-							 * conclusion because "foo" must be immutable.)
-							 * This doesn't work for weak implication, though,
-							 * since the clause yielding the non-false value
-							 * NULL means the predicate will evaluate to false.
-							 */
-							if (!weak &&
-								clause_is_strict_for(clause, (Node *) predntest->arg, true))
-								return true;
-						}
+						if (predicate_implied_not_null_by_clause(predntest->arg,
+									clause, weak))
+							return true;
 						break;
 					case IS_NULL:
 						if (IsA(clause, BooleanTest))
@@ -1343,8 +1303,17 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						}
 						break;
 					case IS_NOT_UNKNOWN:
-						/* TODO: Do I need to copy the above? Or explain why we
-						 * don't need it (tests don't change with it) */
+						/*
+						 * Since "foo IS NOT UNKNOWN" has the same meaning
+						 * as "foo is NOT NULL" (assuming "foo" is a boolean)
+						 * we can prove the same things as we did earlier for
+						 * for NullTest's IS_NOT_NULL case.
+						 *
+						 * For example: truth of x implies x is not unknown.
+						 */
+						if (predicate_implied_not_null_by_clause(predbtest->arg,
+									clause, weak))
+							return true;
 						break;
 				}
 			}
@@ -1385,6 +1354,115 @@ predicate_implied_by_bool_eq_clause(Expr *predicate, Node *clause,
 
 	return false;
 
+}
+
+static bool
+predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
+{
+	/*
+	 * Test effects of calling this function for predicate is not null:
+	 * x is not null, x
+	 * - strong_implied_by
+	 * x is not null, x is not unknown
+	 * - strong_implied_by
+	 * - weak_implied_by
+	 * x is not null, x is true
+	 * - strong_implied_by
+	 * - weak_implied_by
+	 * x is not null, x is false
+	 * - strong_implied_by
+	 * - weak_implied_by
+	 * (x is not null) is not true, x
+	 * - strong_refuted_by
+	 * - weak_refuted_by
+	 * strictf(x,y), (x is not null) is false
+	 * - weak_refuted_by
+	 * x is not null, x > 7
+	 * - strong_implied_by
+	 * ('aaa'::varchar), ('zzz'::varchar), (null)) as v(x)
+	 * - strong_implied_by
+	 * x is not null, int4lt(x,8)
+	 * - strong_implied_by
+	 * x is not null, x = any(opaque_array(array[1]))
+	 * - strong_implied_by
+	 * x is not null, x <> all(array[101 elements])
+	 * - strong_implied_by
+	 * x is not null, x <> all(array[100 elements, y])
+	 * - strong_implied_by
+	 * x is not null, x = any(opaque_array(array[]::int[]))
+	 * - strong_implied_by
+	 */
+
+	/*
+	 * TODO: recurse?
+	 */
+	switch (nodeTag(clause))
+	{
+		case T_BooleanTest:
+			{
+				BooleanTest *clausebtest = (BooleanTest *) clause;
+
+				/*
+				 * Because BooleanTest clauses always evaluate to true or false
+				 * (and never NULL), we can conclude that such a clause with
+				 * "foo" as its argument will always imply "foo" isn't null
+				 * unless the boolean test is "IS UNKNOWN" (since UNKNOWN is a
+				 * boolean-specific NULL alias).
+				 *
+				 * This also covers the more obvious case of "x IS NOT NULL"
+				 * being implied by "x IS NOT UNKNOWN".
+				 */
+				if (clausebtest->booltesttype != IS_UNKNOWN &&
+					equal(predicate, clausebtest->arg))
+					return true;
+			}
+			break;
+		case T_NullTest:
+			{
+				NullTest *clausentest = (NullTest *) clause;
+
+				/*
+				 * It's self-evident that "foo IS NOT NULL" implies "foo"
+				 * isn't NULL.
+				 */
+				if (clausentest->nulltesttype == IS_NOT_NULL &&
+					equal(predicate, clausentest->arg))
+					return true;
+			}
+			break;
+		case T_DistinctExpr:
+			/*
+			 * If both of the two arguments to IS [NOT] DISTINCT FROM separately
+			 * imply that the predicate is not null or are strict for the
+			 * predicate, then we could prove implication that the predicate is
+			 * not null. But it's not obvious that it's worth expending time
+			 * on that check since having the predicate in the expression on
+			 * both sides of the distinct expression is likely uncommon.
+			 */
+			break;
+		case T_Const:
+			/*
+			 * We don't currently have to consider Const expressions because constant
+			 * folding would have eliminated the node types we consider here.
+			 */
+			break;
+		default:
+			break;
+	}
+
+	/*
+	 * We can conclude that a predicate "foo" is not null if the clause is
+	 * strict for "foo", i.e., it must yield false or NULL when "foo" is NULL.
+	 * In that case truth of the clause ensures that "foo" isn't NULL.  (Again,
+	 * this is a safe conclusion because "foo" must be immutable.) This doesn't
+	 * work for weak implication, though, since the clause yielding the
+	 * non-false value NULL means the predicate will evaluate to false.
+	 */
+	if (!weak && clause_is_strict_for(clause, (Node *) predicate, true))
+		return true;
+
+
+	return false;
 }
 
 /*

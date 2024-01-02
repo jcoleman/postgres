@@ -57,6 +57,21 @@ from booleans
 $$);
 
 select * from test_predtest($$
+select x is not unknown, x
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not unknown, x is not null
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not null, x is not unknown
+from booleans
+$$);
+
+select * from test_predtest($$
 select x is not null, x is null
 from integers
 $$);
@@ -223,11 +238,6 @@ $$);
 
 select * from test_predtest($$
 select x is null, x is unknown
-from booleans
-$$);
-
-select * from test_predtest($$
-select x is not null, x is not unknown
 from booleans
 $$);
 
@@ -608,7 +618,7 @@ from booleans
 $$);
 
 select * from test_predtest($$
-select x, x is unknown
+select strictf(x, y), x is unknown
 from booleans
 $$);
 

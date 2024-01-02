@@ -94,6 +94,48 @@ s_r_holds         | f
 w_r_holds         | f
 
 select * from test_predtest($$
+select x is not unknown, x
+from booleans
+$$);
+-[ RECORD 1 ]-----+--
+strong_implied_by | t
+weak_implied_by   | f
+strong_refuted_by | f
+weak_refuted_by   | f
+s_i_holds         | t
+w_i_holds         | f
+s_r_holds         | f
+w_r_holds         | f
+
+select * from test_predtest($$
+select x is not unknown, x is not null
+from booleans
+$$);
+-[ RECORD 1 ]-----+--
+strong_implied_by | t
+weak_implied_by   | t
+strong_refuted_by | f
+weak_refuted_by   | f
+s_i_holds         | t
+w_i_holds         | t
+s_r_holds         | f
+w_r_holds         | f
+
+select * from test_predtest($$
+select x is not null, x is not unknown
+from booleans
+$$);
+-[ RECORD 1 ]-----+--
+strong_implied_by | t
+weak_implied_by   | t
+strong_refuted_by | f
+weak_refuted_by   | f
+s_i_holds         | t
+w_i_holds         | t
+s_r_holds         | f
+w_r_holds         | f
+
+select * from test_predtest($$
 select x is not null, x is null
 from integers
 $$);
@@ -548,20 +590,6 @@ w_r_holds         | f
 
 select * from test_predtest($$
 select x is null, x is unknown
-from booleans
-$$);
--[ RECORD 1 ]-----+--
-strong_implied_by | t
-weak_implied_by   | t
-strong_refuted_by | f
-weak_refuted_by   | f
-s_i_holds         | t
-w_i_holds         | t
-s_r_holds         | f
-w_r_holds         | f
-
-select * from test_predtest($$
-select x is not null, x is not unknown
 from booleans
 $$);
 -[ RECORD 1 ]-----+--
@@ -1539,7 +1567,7 @@ s_r_holds         | t
 w_r_holds         | t
 
 select * from test_predtest($$
-select x, x is unknown
+select strictf(x, y), x is unknown
 from booleans
 $$);
 -[ RECORD 1 ]-----+--
