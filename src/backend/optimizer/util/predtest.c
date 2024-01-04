@@ -1356,6 +1356,31 @@ predicate_implied_by_bool_eq_clause(Expr *predicate, Node *clause,
 
 }
 
+
+/*
+ * predicate_implied_not_null_by_clause
+ *	  Tests a "simple clause" predicate to see if truth of the "simple clause"
+ *	  restriction implies that that predicate is not null.
+ *
+ * We return true if able to prove the implication, false if not. It is expected
+ * that the predicate argument to this function has already been reduced to the
+ * argument of any BooleanTest or NullTest predicate expressions.
+ *
+ * This function encapsulates a specific subcase of
+ * predicate_implied_by_simple_clause cases which is useful in several cases of
+ * both refutation and implication.
+ *
+ * Proving implication of "NOT NULL" is particularly useful for proving it's
+ * safe to use partial indexes defined with a "foo NOT NULL" condition.
+ *
+ * In several of the cases below (e.g., BooleanTest and NullTest) we could
+ * recurse into the argument of those expressions. For example, if the argument
+ * in a BooleanTest is itself a BooleanTest or a NullTest, then if the argument
+ * to that nested test expression matches the clause's subexpression we can
+ * trivially prove implication of "NOT NULL" since BooleanTest and NullTest
+ * always evaluate to true or false. However that doesn't seem useful to expend
+ * cycles on at this point.
+ */
 static bool
 predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 {
@@ -1393,13 +1418,6 @@ predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 	 * - strong_implied_by
 	 */
 
-	/*
-	 * TODO: recurse?
-	 * If we recurse then we can know that _any_ BooleanTest/NullTest
-	 * as a nested argument implies that a not-null result since it
-	 * always returns true or falsei as long as that test has a matching
-	 * argument..
-	 */
 	switch (nodeTag(clause))
 	{
 		case T_BooleanTest:
@@ -1473,7 +1491,6 @@ predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 	 */
 	if (!weak && clause_is_strict_for(clause, (Node *) predicate, true))
 		return true;
-
 
 	return false;
 }
@@ -1684,25 +1701,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						{
 							if (predicate_implied_not_null_by_clause(predbtest->arg, clause, false))
 								return true;
-
-							/*
-							 * clause: x is not unknown
-							 * predicate: (x is true) is unknown
-							 */
-							/* TODO: delete this in favor of recursion (if we add it) */
-							/* TODO: applies to IS NULL also */
-							/* TODO: implication for IS NOT UNKNOWN */
-							/* TODO: do we have a method already that proves an expression is not null?
-							 * do we want to recurse into proving that it's is not null? */
-							if (IsA(clause, BooleanTest))
-							{
-								BooleanTest *clausebtest = (BooleanTest *) clause;
-
-								if (clausebtest->booltesttype == IS_NOT_UNKNOWN &&
-									IsA(predbtest->arg, BooleanTest) &&
-									clause_is_strict_for((Node *) predbtest->arg, (Node *) clausebtest->arg, true))
-									return true;
-							}
 
 							return false;			/* we can't succeed below... */
 						}
