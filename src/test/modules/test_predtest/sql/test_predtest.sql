@@ -216,25 +216,21 @@ select x is unknown, x is not unknown
 from booleans
 $$);
 
--- testing 1
 select * from test_predtest($$
 select strictf(x, y) is unknown, x is not unknown
 from booleans
 $$);
 
--- testing 2
 select * from test_predtest($$
 select strictf(x, y) is unknown, strictf(x, y) is not unknown
 from booleans
 $$);
 
--- testing 3
 select * from test_predtest($$
 select x is unknown, strictf(x, y) is not unknown
 from booleans
 $$);
 
--- testing 5
 select * from test_predtest($$
 select x is unknown, (x is true) is not unknown
 from booleans
@@ -242,6 +238,31 @@ $$);
 
 select * from test_predtest($$
 select x is null, x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select not strictf(x, y), x is unknown
+from booleans
+$$);
+
+select * from test_predtest($$
+select not strictf(x, y), x is null
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is null, not strictf(x, y)
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not null, not strictf(x, y)
+from booleans
+$$);
+
+select * from test_predtest($$
+select x is not unknown, not strictf(x, y)
 from booleans
 $$);
 
@@ -611,9 +632,8 @@ from integers
 $$);
 
 -- More BooleanTest proofs
--- TODO: some of these are duplicative, but it's easier to see them all in one
--- spot. I'm wondering if we should standardize a location for all of them,
--- and potentially updated test_predtest to run both directions rather than
+-- I'm wondering if we should standardize a location for all of them, and
+-- potentially updated test_predtest to run both directions rather than
 -- needing to duplicate queries (with the two clauses swapped).
 
 select * from test_predtest($$

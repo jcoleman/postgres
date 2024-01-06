@@ -1160,6 +1160,29 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				}
 			}
 			break;
+		case T_NullTest:
+			{
+				NullTest *clausentest = (NullTest *) clause;
+
+				/* row IS NOT NULL does not act in the simple way we have in
+				 * mind */
+				if (clausentest->argisrow)
+					return false;
+
+				switch (clausentest->nulltesttype)
+				{
+					case IS_NULL:
+						/* TODO: comment */
+						if (weak && is_notclause(predicate) &&
+								clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausentest->arg, true))
+							return true;
+
+						break;
+					case IS_NOT_NULL:
+						break;
+				}
+			}
+			break;
 		case T_BooleanTest:
 			{
 				BooleanTest	*clausebtest = (BooleanTest *) clause;
@@ -1187,7 +1210,16 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 							return true;
 						break;
 					case IS_UNKNOWN:
+						/* TODO: comment */
+						if (weak && is_notclause(predicate) &&
+								clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausebtest->arg, true))
+							return true;
 					case IS_NOT_UNKNOWN:
+						/*
+						 * "foo IS NOT UKNOWN" implies "foo IS NOT NULL", but we
+						 * handle that in the predicate-type-specific cases
+						 * below.
+						 * */
 						break;
 				}
 			}
@@ -1330,7 +1362,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 	return operator_predicate_proof(predicate, clause, false, weak);
 }
 
-
+/* TODO: inline? */
 static bool
 predicate_implied_by_bool_eq_clause(Expr *predicate, Node *clause,
 									   bool boolvalue, bool isnull, bool weak)
@@ -1481,16 +1513,25 @@ predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 			break;
 	}
 
-	/*
-	 * We can conclude that a predicate "foo" is not null if the clause is
-	 * strict for "foo", i.e., it must yield false or NULL when "foo" is NULL.
-	 * In that case truth of the clause ensures that "foo" isn't NULL.  (Again,
-	 * this is a safe conclusion because "foo" must be immutable.) This doesn't
-	 * work for weak implication, though, since the clause yielding the
-	 * non-false value NULL means the predicate will evaluate to false.
-	 */
-	if (!weak && clause_is_strict_for(clause, (Node *) predicate, true))
-		return true;
+	if (!weak)
+	{
+		/*
+		 * We can conclude that a predicate "foo" is not null if the clause is
+		 * strict for "foo", i.e., it must yield false or NULL when "foo" is
+		 * NULL.  In that case truth of the clause ensures that "foo" isn't
+		 * NULL.  (Again, this is a safe conclusion because "foo" must be
+		 * immutable.) This doesn't work for weak implication, though, since
+		 * the clause yielding the non-false value NULL means the predicate
+		 * will evaluate to false.
+		 */
+		if (clause_is_strict_for(clause, (Node *) predicate, true))
+			return true;
+
+		/* TODO: Comment */
+		if (is_notclause(clause) &&
+			clause_is_strict_for((Node *) get_notclausearg(clause), (Node *) predicate, true))
+			return true;
+	}
 
 	return false;
 }
@@ -1550,7 +1591,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						{
 
 							/* TODO: comment about passing weak=true */
-							if (predicate_implied_not_null_by_clause(clausentest->arg, predicate, true))
+							if (predicate_implied_not_null_by_clause(clausentest->arg, (Node *) predicate, true))
 								return true;
 
 							/*
@@ -1564,6 +1605,11 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 									clause_is_strict_for((Node *) predicate, (Node *) clausentest->arg, true))
 								return true;
 
+							/* TODO: Comment */
+							if (weak && is_notclause(predicate) &&
+									clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausentest->arg, true))
+								return true;
+
 							return false;			/* we can't succeed below... */
 						}
 						break;
@@ -1573,6 +1619,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						 * and "foo IS UNKNOWN", but we handle that in the
 						 * predicate switch statement.
 						 */
+						break;
 				}
 			}
 		case T_BooleanTest:
@@ -1625,7 +1672,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 					case IS_UNKNOWN:
 						{
 							/* TODO: comment about passing weak=true */
-							if (predicate_implied_not_null_by_clause(clausebtest->arg, predicate, true))
+							if (predicate_implied_not_null_by_clause(clausebtest->arg, (Node *) predicate, true))
 								return true;
 
 							/*
@@ -1645,6 +1692,11 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 */
 							if (weak &&
 								clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
+								return true;
+
+							/* TODO: Comment */
+							if (weak && is_notclause(predicate) &&
+									clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausebtest->arg, true))
 								return true;
 
 							return false;			/* we can't succeed below... */
@@ -1681,6 +1733,11 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 					case IS_NULL:
 						{
 							if (predicate_implied_not_null_by_clause(predntest->arg, clause, false))
+								return true;
+
+							/* TODO: comment */
+							if (is_notclause(clause) &&
+									clause_is_strict_for((Node *) get_notclausearg(clause), (Node *) predntest->arg, true))
 								return true;
 
 							return false;			/* we can't succeed below... */
