@@ -1513,25 +1513,16 @@ predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 			break;
 	}
 
-	if (!weak)
-	{
-		/*
-		 * We can conclude that a predicate "foo" is not null if the clause is
-		 * strict for "foo", i.e., it must yield false or NULL when "foo" is
-		 * NULL.  In that case truth of the clause ensures that "foo" isn't
-		 * NULL.  (Again, this is a safe conclusion because "foo" must be
-		 * immutable.) This doesn't work for weak implication, though, since
-		 * the clause yielding the non-false value NULL means the predicate
-		 * will evaluate to false.
-		 */
-		if (clause_is_strict_for(clause, (Node *) predicate, true))
-			return true;
-
-		/* TODO: Comment */
-		if (is_notclause(clause) &&
-			clause_is_strict_for((Node *) get_notclausearg(clause), (Node *) predicate, true))
-			return true;
-	}
+	/*
+	 * We can conclude that a predicate "foo" is not null if the clause is
+	 * strict for "foo", i.e., it must yield false or NULL when "foo" is NULL.
+	 * In that case truth of the clause ensures that "foo" isn't NULL.  (Again,
+	 * this is a safe conclusion because "foo" must be immutable.) This doesn't
+	 * work for weak implication, though, since the clause yielding the
+	 * non-false value NULL means the predicate will evaluate to false.
+	 */
+	if (!weak && clause_is_strict_for(clause, (Node *) predicate, true))
+		return true;
 
 	return false;
 }
@@ -1602,12 +1593,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 * strict for foo; see notes in implication for
 							 * foo IS NOT NULL */
 							if (weak &&
-									clause_is_strict_for((Node *) predicate, (Node *) clausentest->arg, true))
-								return true;
-
-							/* TODO: Comment */
-							if (weak && is_notclause(predicate) &&
-									clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausentest->arg, true))
+								clause_is_strict_for((Node *) predicate, (Node *) clausentest->arg, true))
 								return true;
 
 							return false;			/* we can't succeed below... */
@@ -1694,11 +1680,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 								clause_is_strict_for((Node *) predicate, (Node *) clausebtest->arg, true))
 								return true;
 
-							/* TODO: Comment */
-							if (weak && is_notclause(predicate) &&
-									clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausebtest->arg, true))
-								return true;
-
 							return false;			/* we can't succeed below... */
 						}
 						break;
@@ -1733,11 +1714,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 					case IS_NULL:
 						{
 							if (predicate_implied_not_null_by_clause(predntest->arg, clause, false))
-								return true;
-
-							/* TODO: comment */
-							if (is_notclause(clause) &&
-									clause_is_strict_for((Node *) get_notclausearg(clause), (Node *) predntest->arg, true))
 								return true;
 
 							return false;			/* we can't succeed below... */
@@ -1905,6 +1881,15 @@ clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false)
 		}
 		return false;
 	}
+
+	/*
+	 * We can recurse into "not foo" without any additional processing because
+	 * "not (null)" evaluates to null. That doesn't work for allow_false,
+	 * however, since "not (false)" is true rather than null.
+	 */
+	if (is_notclause(clause) &&
+		clause_is_strict_for((Node *) get_notclausearg(clause), subexpr, false))
+		return true;
 
 	/*
 	 * CoerceViaIO is strict (whether or not the I/O functions it calls are).

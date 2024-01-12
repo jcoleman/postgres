@@ -682,6 +682,20 @@ s_r_holds         | f
 w_r_holds         | f
 
 select * from test_predtest($$
+select x is unknown, not strictf(x, y)
+from booleans
+$$);
+-[ RECORD 1 ]-----+--
+strong_implied_by | f
+weak_implied_by   | f
+strong_refuted_by | t
+weak_refuted_by   | t
+s_i_holds         | f
+w_i_holds         | f
+s_r_holds         | t
+w_r_holds         | t
+
+select * from test_predtest($$
 select x is not null, x is true
 from booleans
 $$);
