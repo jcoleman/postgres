@@ -1581,14 +1581,21 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 					case IS_NULL:
 						{
 
-							/* TODO: comment about passing weak=true */
+							/*
+							 * When we know what the clause is in the form "foo
+							 * IS NULL" then we can prove refutation of the
+							 * predicate, but we have to exclude cases where
+							 * we'd allow false in strictness checking so we
+							 * always pass weak=true here. This is because we
+							 * aren't assuming anything about the form of the
+							 * predicate in that case, and, for example, we
+							 * might have a predicate of simply "foo", but "foo
+							 * = false" would mean both our clause and our
+							 * predicate would evaluate to "false".
+							 */
 							if (predicate_implied_not_null_by_clause(clausentest->arg, (Node *) predicate, true))
 								return true;
 
-							/*
-							 * TODO: is there a way to move this into the
-							 * extracted method in a desirable way?
-							 */
 							/* foo IS NULL weakly refutes any predicate that is
 							 * strict for foo; see notes in implication for
 							 * foo IS NOT NULL */
@@ -1657,14 +1664,21 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						break;
 					case IS_UNKNOWN:
 						{
-							/* TODO: comment about passing weak=true */
+							/*
+							 * When we know what the clause is in the form "foo
+							 * IS UNKNOWN" then we can prove refutation of the
+							 * predicate, but we have to exclude cases where
+							 * we'd allow false in strictness checking so we
+							 * always pass weak=true here. This is because we
+							 * aren't assuming anything about the form of the
+							 * predicate in that case, and, for example, we
+							 * might have a predicate of simply "foo", but "foo
+							 * = false" would mean both our clause and our
+							 * predicate would evaluate to "false".
+							 */
 							if (predicate_implied_not_null_by_clause(clausebtest->arg, (Node *) predicate, true))
 								return true;
 
-							/*
-							 * TODO: is there a way to move this into the
-							 * extracted method in a desirable way?
-							 */
 							/*
 							 * Truth of the clause "foo IS UNKNOWN" tells us
 							 * that "foo" is null, and if the predicate is
@@ -1691,8 +1705,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						 */
 						break;
 				}
-
-				/* TODO: is there anywhere else we should return false? */
 			}
 		default:
 			break;
@@ -1713,6 +1725,15 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 				{
 					case IS_NULL:
 						{
+							/*
+							 * When we know what the predicate is in the form
+							 * "foo IS NULL" then we can prove strong and weak
+							 * refutation together. This is because the limits
+							 * imposed by weak refutation (allowing "false"
+							 * instead of just "null") is equivalently helpful
+							 * since "foo" being "false" also refutes the
+							 * predicate. Hence we pass weak=false here always.
+							 */
 							if (predicate_implied_not_null_by_clause(predntest->arg, clause, false))
 								return true;
 
@@ -1732,6 +1753,16 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 				{
 					case IS_UNKNOWN:
 						{
+							/*
+							 * When we know what the predicate is in the form
+							 * "foo IS UNKNOWN" then we can prove strong and
+							 * weak refutation together. This is because the
+							 * limits imposed by weak refutation (allowing
+							 * "false" instead of just "null") is equivalently
+							 * helpful since "foo" being "false" also refutes
+							 * the predicate. Hence we pass weak=false here
+							 * always.
+							 */
 							if (predicate_implied_not_null_by_clause(predbtest->arg, clause, false))
 								return true;
 
