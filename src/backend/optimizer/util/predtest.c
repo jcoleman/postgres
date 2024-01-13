@@ -1172,7 +1172,14 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				switch (clausentest->nulltesttype)
 				{
 					case IS_NULL:
-						/* TODO: comment */
+						/*
+						 * When the clause is in the form "foo IS NULL" then
+						 * we can prove weak implication of a predicate that
+						 * is strict for "foo" and negated. This doesn't work
+						 * for strong implication since if "foo" is "null" then
+						 * the predicate will evaluate to "null" rather than
+						 * "true".
+						 */
 						if (weak && is_notclause(predicate) &&
 							clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausentest->arg, true))
 							return true;
@@ -1210,7 +1217,14 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 							return true;
 						break;
 					case IS_UNKNOWN:
-						/* TODO: comment */
+						/*
+						 * When the clause is in the form "foo IS UNKNOWN" then
+						 * we can prove weak implication of a predicate that
+						 * is strict for "foo" and negated. This doesn't work
+						 * for strong implication since if "foo" is "null" then
+						 * the predicate will evaluate to "null" rather than
+						 * "true".
+						 */
 						if (weak && is_notclause(predicate) &&
 							clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausebtest->arg, true))
 							return true;
@@ -1554,16 +1568,6 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 		return false;
 
 	/* Our remaining strategies are all clause-type-specific */
-
-	/*
-	 * TODO: break up comment.
-	 *
-	 * A clause "foo IS NULL" refutes a predicate "foo IS NOT NULL" in all
-	 * cases.  If we are considering weak refutation, it also refutes a
-	 * predicate that is strict for "foo", since then the predicate must yield
-	 * false or NULL (and since "foo" appears in the predicate, it's known
-	 * immutable).
-	 */
 	switch (nodeTag(clause))
 	{
 		case T_NullTest:
@@ -1581,11 +1585,12 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 
 							/*
 							 * When we know what the clause is in the form "foo
-							 * IS NULL" then we can prove refutation of the
-							 * predicate, but we have to exclude cases where
-							 * we'd allow false in strictness checking so we
-							 * always pass weak=true here. This is because we
-							 * aren't assuming anything about the form of the
+							 * IS NULL" then we can prove refutation of any
+							 * predicate that is itself implied not null, but
+							 * we have to exclude cases where we'd allow false
+							 * in strictness checking so we always pass
+							 * weak=true here. This is because we aren't
+							 * assuming anything about the form of the
 							 * predicate in that case, and, for example, we
 							 * might have a predicate of simply "foo", but "foo
 							 * = false" would mean both our clause and our
@@ -1664,11 +1669,12 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 						{
 							/*
 							 * When we know what the clause is in the form "foo
-							 * IS UNKNOWN" then we can prove refutation of the
-							 * predicate, but we have to exclude cases where
-							 * we'd allow false in strictness checking so we
-							 * always pass weak=true here. This is because we
-							 * aren't assuming anything about the form of the
+							 * IS UNKNOWN" then we can prove refutation of any
+							 * predicate that is itself implied not null, but
+							 * we have to exclude cases where we'd allow false
+							 * in strictness checking so we always pass
+							 * weak=true here. This is because we aren't
+							 * assuming anything about the form of the
 							 * predicate in that case, and, for example, we
 							 * might have a predicate of simply "foo", but "foo
 							 * = false" would mean both our clause and our
