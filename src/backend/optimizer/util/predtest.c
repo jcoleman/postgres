@@ -1428,40 +1428,6 @@ predicate_implied_by_bool_eq_clause(Expr *predicate, Node *clause,
 static bool
 predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 {
-	/*
-	 * Test effects of calling this function for predicate is not null:
-	 * x is not null, x
-	 * - strong_implied_by
-	 * x is not null, x is not unknown
-	 * - strong_implied_by
-	 * - weak_implied_by
-	 * x is not null, x is true
-	 * - strong_implied_by
-	 * - weak_implied_by
-	 * x is not null, x is false
-	 * - strong_implied_by
-	 * - weak_implied_by
-	 * (x is not null) is not true, x
-	 * - strong_refuted_by
-	 * - weak_refuted_by
-	 * strictf(x,y), (x is not null) is false
-	 * - weak_refuted_by
-	 * x is not null, x > 7
-	 * - strong_implied_by
-	 * ('aaa'::varchar), ('zzz'::varchar), (null)) as v(x)
-	 * - strong_implied_by
-	 * x is not null, int4lt(x,8)
-	 * - strong_implied_by
-	 * x is not null, x = any(opaque_array(array[1]))
-	 * - strong_implied_by
-	 * x is not null, x <> all(array[101 elements])
-	 * - strong_implied_by
-	 * x is not null, x <> all(array[100 elements, y])
-	 * - strong_implied_by
-	 * x is not null, x = any(opaque_array(array[]::int[]))
-	 * - strong_implied_by
-	 */
-
 	switch (nodeTag(clause))
 	{
 		case T_BooleanTest:
