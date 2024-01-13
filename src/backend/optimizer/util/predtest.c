@@ -1174,7 +1174,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 					case IS_NULL:
 						/* TODO: comment */
 						if (weak && is_notclause(predicate) &&
-								clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausentest->arg, true))
+							clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausentest->arg, true))
 							return true;
 
 						break;
@@ -1191,28 +1191,28 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				{
 					case IS_TRUE:
 						if (predicate_implied_by_bool_eq_clause(predicate,
-								(Node *) clausebtest->arg, true, false, weak))
+							(Node *) clausebtest->arg, true, false, weak))
 							return true;
 						break;
 					case IS_FALSE:
 						if (predicate_implied_by_bool_eq_clause(predicate,
-								(Node *) clausebtest->arg, false, false, weak))
+							(Node *) clausebtest->arg, false, false, weak))
 							return true;
 						break;
 					case IS_NOT_TRUE:
 						if (weak && predicate_implied_by_bool_eq_clause(predicate,
-								(Node *) clausebtest->arg, false, false, weak))
+							(Node *) clausebtest->arg, false, false, weak))
 							return true;
 						break;
 					case IS_NOT_FALSE:
 						if (weak && predicate_implied_by_bool_eq_clause(predicate,
-								(Node *) clausebtest->arg, true, false, weak))
+							(Node *) clausebtest->arg, true, false, weak))
 							return true;
 						break;
 					case IS_UNKNOWN:
 						/* TODO: comment */
 						if (weak && is_notclause(predicate) &&
-								clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausebtest->arg, true))
+							clause_is_strict_for((Node *) get_notclausearg(predicate), (Node *) clausebtest->arg, true))
 							return true;
 					case IS_NOT_UNKNOWN:
 						/*
@@ -1243,8 +1243,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 				switch (predntest->nulltesttype)
 				{
 					case IS_NOT_NULL:
-						if (predicate_implied_not_null_by_clause(predntest->arg,
-									clause, weak))
+						if (predicate_implied_not_null_by_clause(predntest->arg, clause, weak))
 							return true;
 						break;
 					case IS_NULL:
@@ -1285,14 +1284,14 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						 * null` is null rather than true.
 						 */
 						if (!weak && is_notclause(clause) &&
-								equal(get_notclausearg(clause), predbtest->arg))
+							equal(get_notclausearg(clause), predbtest->arg))
 							return true;
 						break;
 					case IS_NOT_TRUE:
 						{
 							/* NOT X implies X is not true */
 							if (is_notclause(clause) &&
-									equal(get_notclausearg(clause), predbtest->arg))
+								equal(get_notclausearg(clause), predbtest->arg))
 								return true;
 
 							if (IsA(clause, BooleanTest))
@@ -1301,7 +1300,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 
 								/* X is unknown weakly implies X is not true */
 								if (weak && clausebtest->booltesttype == IS_UNKNOWN &&
-										equal(clausebtest->arg, predbtest->arg))
+									equal(clausebtest->arg, predbtest->arg))
 									return true;
 							}
 						}
@@ -1318,7 +1317,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 
 								/* X is unknown weakly implies X is not false */
 								if (weak && clausebtest->booltesttype == IS_UNKNOWN &&
-										equal(clausebtest->arg, predbtest->arg))
+									equal(clausebtest->arg, predbtest->arg))
 									return true;
 							}
 						}
@@ -1330,7 +1329,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 
 							/* X IS NULL implies X is unknown */
 							if (clausentest->nulltesttype == IS_NULL &&
-									equal(clausentest->arg, predbtest->arg))
+								equal(clausentest->arg, predbtest->arg))
 								return true;
 						}
 						break;
@@ -1343,8 +1342,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						 *
 						 * For example: truth of x implies x is not unknown.
 						 */
-						if (predicate_implied_not_null_by_clause(predbtest->arg,
-									clause, weak))
+						if (predicate_implied_not_null_by_clause(predbtest->arg, clause, weak))
 							return true;
 						break;
 				}
