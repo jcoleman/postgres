@@ -272,6 +272,35 @@ ERROR:  invalid reference to FROM-clause entry for table "insertconflicttest"
 LINE 1: ...onfruit') on conflict (key) do update set fruit = insertconf...
                                                              ^
 HINT:  Perhaps you meant to reference the table alias "ict".
+-- Helpful hint when qualifying set column with target table
+insert into insertconflicttest values (3, 'Kiwi') on conflict (key, fruit) do update set insertconflicttest.fruit = 'Mango';
+ERROR:  column "insertconflicttest" of relation "insertconflicttest" does not exist
+LINE 1: ...3, 'Kiwi') on conflict (key, fruit) do update set insertconf...
+                                                             ^
+HINT:  target columns cannot be qualified with the target relation name
+insert into insertconflicttest AS ict values (3, 'Kiwi') on conflict (key, fruit) do update set ict.fruit = 'Mango';
+ERROR:  column "ict" of relation "insertconflicttest" does not exist
+LINE 1: ...3, 'Kiwi') on conflict (key, fruit) do update set ict.fruit ...
+                                                             ^
+HINT:  target columns cannot be qualified with the target relation name
+-- ... but not when the column doesn't match the table name.
+insert into insertconflicttest values (3, 'Kiwi') on conflict (key, fruit) do update set insertconflicttest2.fruit = 'Mango';
+ERROR:  column "insertconflicttest2" of relation "insertconflicttest" does not exist
+LINE 1: ...3, 'Kiwi') on conflict (key, fruit) do update set insertconf...
+                                                             ^
+insert into insertconflicttest AS ict values (3, 'Kiwi') on conflict (key, fruit) do update set ict2.fruit = 'Mango';
+ERROR:  column "ict2" of relation "insertconflicttest" does not exist
+LINE 1: ...3, 'Kiwi') on conflict (key, fruit) do update set ict2.fruit...
+                                                             ^
+-- ... also not when the column isn't qualified but matches the table name.
+insert into insertconflicttest values (3, 'Kiwi') on conflict (key, fruit) do update set insertconflicttest = 'Mango';
+ERROR:  column "insertconflicttest" of relation "insertconflicttest" does not exist
+LINE 1: ...3, 'Kiwi') on conflict (key, fruit) do update set insertconf...
+                                                             ^
+insert into insertconflicttest AS ict values (3, 'Kiwi') on conflict (key, fruit) do update set ict = 'Mango';
+ERROR:  column "ict" of relation "insertconflicttest" does not exist
+LINE 1: ...3, 'Kiwi') on conflict (key, fruit) do update set ict = 'Man...
+                                                             ^
 drop index key_index;
 --
 -- Composite key tests

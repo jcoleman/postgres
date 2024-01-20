@@ -118,6 +118,16 @@ insert into insertconflicttest AS ict values (6, 'Passionfruit') on conflict (ke
 insert into insertconflicttest AS ict values (6, 'Passionfruit') on conflict (key) do update set fruit = ict.fruit; -- ok, alias
 insert into insertconflicttest AS ict values (6, 'Passionfruit') on conflict (key) do update set fruit = insertconflicttest.fruit; -- error, references aliased away name
 
+-- Helpful hint when qualifying set column with target table
+insert into insertconflicttest values (3, 'Kiwi') on conflict (key, fruit) do update set insertconflicttest.fruit = 'Mango';
+insert into insertconflicttest AS ict values (3, 'Kiwi') on conflict (key, fruit) do update set ict.fruit = 'Mango';
+-- ... but not when the column doesn't match the table name.
+insert into insertconflicttest values (3, 'Kiwi') on conflict (key, fruit) do update set insertconflicttest2.fruit = 'Mango';
+insert into insertconflicttest AS ict values (3, 'Kiwi') on conflict (key, fruit) do update set ict2.fruit = 'Mango';
+-- ... also not when the column isn't qualified but matches the table name.
+insert into insertconflicttest values (3, 'Kiwi') on conflict (key, fruit) do update set insertconflicttest = 'Mango';
+insert into insertconflicttest AS ict values (3, 'Kiwi') on conflict (key, fruit) do update set ict = 'Mango';
+
 drop index key_index;
 
 --

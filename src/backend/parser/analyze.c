@@ -2513,12 +2513,25 @@ transformUpdateTargetList(ParseState *pstate, List *origTlist)
 		attrno = attnameAttNum(pstate->p_target_relation,
 							   origTarget->name, true);
 		if (attrno == InvalidAttrNumber)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_COLUMN),
-					 errmsg("column \"%s\" of relation \"%s\" does not exist",
-							origTarget->name,
-							RelationGetRelationName(pstate->p_target_relation)),
-					 parser_errposition(pstate, origTarget->location)));
+		{
+			char *relname = RelationGetRelationName(pstate->p_target_relation);
+			char *aliasname = pstate->p_target_nsitem->p_names->aliasname;
+
+			if (origTarget->indirection != NIL &&
+					strcmp(origTarget->name, aliasname) == 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_COLUMN),
+						 errmsg("column \"%s\" of relation \"%s\" does not exist",
+								origTarget->name, relname),
+						 errhint("target columns cannot be qualified with the target relation name"),
+						 parser_errposition(pstate, origTarget->location)));
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_COLUMN),
+						 errmsg("column \"%s\" of relation \"%s\" does not exist",
+								origTarget->name, relname),
+						 parser_errposition(pstate, origTarget->location)));
+		}
 
 		updateTargetListEntry(pstate, tle, origTarget->name,
 							  attrno,
