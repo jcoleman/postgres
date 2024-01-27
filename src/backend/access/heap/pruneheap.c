@@ -95,8 +95,6 @@ heap_page_prune_opt(Relation relation, Buffer buffer, bool already_locked)
 	GlobalVisState *vistest;
 	Size		minfree;
 
-	if (relation->rd_id > 16384)
-		elog(WARNING, "in heap_page_prune_opt");
 	/*
 	 * We can't write WAL in recovery mode, so there's no point trying to
 	 * clean the page. The primary will likely issue a cleaning WAL record
@@ -231,8 +229,6 @@ heap_page_prune(Relation relation, Buffer buffer,
 	PruneState	prstate;
 	HeapTupleData tup;
 
-	if (relation->rd_id > 16384)
-	  elog(WARNING, "in heap_page_prune");
 	/*
 	 * Our strategy is to scan the page and make lists of items to change,
 	 * then apply the changes within a critical section.  This keeps as much
@@ -360,8 +356,6 @@ heap_page_prune(Relation relation, Buffer buffer,
 		 * Update the page's pd_prune_xid field to either zero, or the lowest
 		 * XID of any soon-prunable tuple.
 		 */
-		if (relation->rd_id > 16384)
-			elog(WARNING, "setting pd_prune_xid=%u", prstate.new_prune_xid);
 		((PageHeader) page)->pd_prune_xid = prstate.new_prune_xid;
 
 		/*
@@ -428,8 +422,6 @@ heap_page_prune(Relation relation, Buffer buffer,
 		if (((PageHeader) page)->pd_prune_xid != prstate.new_prune_xid ||
 			PageIsFull(page))
 		{
-			if (relation->rd_id > 16384)
-				elog(WARNING, "setting pd_prune_xid=%u", prstate.new_prune_xid);
 			((PageHeader) page)->pd_prune_xid = prstate.new_prune_xid;
 			PageClearFull(page);
 			MarkBufferDirtyHint(buffer, true);
