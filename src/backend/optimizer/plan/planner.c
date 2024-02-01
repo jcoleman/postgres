@@ -3945,7 +3945,8 @@ create_ordinary_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	if (partially_grouped_rel && partially_grouped_rel->partial_pathlist)
 	{
 		gather_grouping_paths(root, partially_grouped_rel);
-		set_cheapest(partially_grouped_rel);
+		if (partially_grouped_rel->pathlist)
+			set_cheapest(partially_grouped_rel);
 	}
 
 	/*
