@@ -532,6 +532,7 @@ build_setop_child_paths(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	final_rel = fetch_upper_rel(rel->subroot, UPPERREL_FINAL, NULL);
 	rel->consider_parallel = final_rel->consider_parallel;
+	rel->params_req_for_parallel = final_rel->params_req_for_parallel;
 
 	/* Generate subquery scan paths for any interesting path in final_rel */
 	foreach(lc, final_rel->pathlist)
@@ -707,6 +708,7 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 	List	   *partial_pathlist = NIL;
 	bool		partial_paths_valid = true;
 	bool		consider_parallel = true;
+	Bitmapset  *params_req_for_parallel = NULL;
 	List	   *rellist;
 	List	   *tlist_list;
 	List	   *trivial_tlist_list;
@@ -816,6 +818,9 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 			else
 				partial_pathlist = lappend(partial_pathlist,
 										   linitial(rel->partial_pathlist));
+
+			params_req_for_parallel = bms_union(params_req_for_parallel,
+												rel->params_req_for_parallel);
 		}
 
 		relids = bms_union(relids, rel->relids);
@@ -825,6 +830,7 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 	result_rel = fetch_upper_rel(root, UPPERREL_SETOP, relids);
 	result_rel->reltarget = create_pathtarget(root, tlist);
 	result_rel->consider_parallel = consider_parallel;
+	result_rel->params_req_for_parallel = params_req_for_parallel;
 	result_rel->consider_startup = (root->tuple_fraction > 0);
 
 	/*
