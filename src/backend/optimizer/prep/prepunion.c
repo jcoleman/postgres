@@ -276,6 +276,7 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 		 */
 		final_rel = fetch_upper_rel(subroot, UPPERREL_FINAL, NULL);
 		rel->consider_parallel = final_rel->consider_parallel;
+		rel->params_req_for_parallel = bms_copy(final_rel->params_req_for_parallel);
 
 		/*
 		 * For the moment, we consider only a single Path for the subquery.
@@ -559,6 +560,7 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 	List	   *partial_pathlist = NIL;
 	bool		partial_paths_valid = true;
 	bool		consider_parallel = true;
+	Bitmapset  *params_req_for_parallel = NULL;
 	List	   *rellist;
 	List	   *tlist_list;
 	List	   *tlist;
@@ -617,6 +619,9 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 			else
 				partial_pathlist = lappend(partial_pathlist,
 										   linitial(rel->partial_pathlist));
+
+			params_req_for_parallel = bms_union(params_req_for_parallel,
+												rel->params_req_for_parallel);
 		}
 
 		relids = bms_union(relids, rel->relids);
@@ -626,6 +631,7 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 	result_rel = fetch_upper_rel(root, UPPERREL_SETOP, relids);
 	result_rel->reltarget = create_pathtarget(root, tlist);
 	result_rel->consider_parallel = consider_parallel;
+	result_rel->params_req_for_parallel = params_req_for_parallel;
 
 	/*
 	 * Append the child results together.

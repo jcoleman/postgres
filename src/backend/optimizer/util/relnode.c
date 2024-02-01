@@ -699,7 +699,6 @@ build_join_rel(PlannerInfo *root,
 	joinrel->consider_startup = (root->tuple_fraction > 0);
 	joinrel->consider_param_startup = false;
 	joinrel->consider_parallel = false;
-	joinrel->params_req_for_parallel = bms_union(outer_rel->params_req_for_parallel, inner_rel->params_req_for_parallel);
 	joinrel->reltarget = create_empty_pathtarget();
 	joinrel->pathlist = NIL;
 	joinrel->ppilist = NIL;
@@ -834,7 +833,11 @@ build_join_rel(PlannerInfo *root,
 	if (inner_rel->consider_parallel && outer_rel->consider_parallel &&
 		is_parallel_safe(root, (Node *) restrictlist) &&
 		is_parallel_safe(root, (Node *) joinrel->reltarget->exprs))
+	{
 		joinrel->consider_parallel = true;
+		joinrel->params_req_for_parallel = bms_union(inner_rel->params_req_for_parallel,
+													 outer_rel->params_req_for_parallel);
+	}
 
 	/* Add the joinrel to the PlannerInfo. */
 	add_join_rel(root, joinrel);
@@ -986,6 +989,7 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 
 	/* Child joinrel is parallel safe if parent is parallel safe. */
 	joinrel->consider_parallel = parent_joinrel->consider_parallel;
+	joinrel->params_req_for_parallel = bms_copy(parent_joinrel->params_req_for_parallel);
 
 	/* Set estimates of the child-joinrel's size. */
 	set_joinrel_size_estimates(root, joinrel, outer_rel, inner_rel,
@@ -1487,6 +1491,7 @@ fetch_upper_rel(PlannerInfo *root, UpperRelationKind kind, Relids relids)
 	upperrel->consider_startup = (root->tuple_fraction > 0);
 	upperrel->consider_param_startup = false;
 	upperrel->consider_parallel = false;	/* might get changed later */
+	upperrel->params_req_for_parallel = NULL; /* might get changed later */
 	upperrel->reltarget = create_empty_pathtarget();
 	upperrel->pathlist = NIL;
 	upperrel->cheapest_startup_path = NULL;

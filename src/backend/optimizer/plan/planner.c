@@ -1736,7 +1736,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	if (current_rel->consider_parallel &&
 		is_parallel_safe(root, parse->limitOffset) &&
 		is_parallel_safe(root, parse->limitCount))
+	{
 		final_rel->consider_parallel = true;
+		final_rel->params_req_for_parallel = bms_copy(current_rel->params_req_for_parallel);
+	}
 
 	/*
 	 * If the current_rel belongs to a single FDW, so does the final_rel.
@@ -3747,7 +3750,10 @@ make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 	 */
 	if (input_rel->consider_parallel && target_parallel_safe &&
 		is_parallel_safe(root, (Node *) havingQual))
+	{
 		grouped_rel->consider_parallel = true;
+		grouped_rel->params_req_for_parallel = bms_copy(input_rel->params_req_for_parallel);
+	}
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the grouped rel.
@@ -4375,7 +4381,10 @@ create_window_paths(PlannerInfo *root,
 	 */
 	if (input_rel->consider_parallel && output_target_parallel_safe &&
 		is_parallel_safe(root, (Node *) activeWindows))
+	{
 		window_rel->consider_parallel = true;
+		window_rel->params_req_for_parallel = bms_copy(input_rel->params_req_for_parallel);
+	}
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the window rel.
@@ -4588,6 +4597,7 @@ create_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel)
 	 * expressions are parallel-safe.
 	 */
 	distinct_rel->consider_parallel = input_rel->consider_parallel;
+	distinct_rel->params_req_for_parallel = bms_copy(input_rel->params_req_for_parallel);
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the distinct_rel.
@@ -4666,6 +4676,7 @@ create_partial_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 										   NULL);
 	partial_distinct_rel->reltarget = root->upper_targets[UPPERREL_PARTIAL_DISTINCT];
 	partial_distinct_rel->consider_parallel = input_rel->consider_parallel;
+	partial_distinct_rel->params_req_for_parallel = bms_copy(input_rel->params_req_for_parallel);
 
 	/*
 	 * If input_rel belongs to a single FDW, so does the partial_distinct_rel.
@@ -5032,7 +5043,10 @@ create_ordered_paths(PlannerInfo *root,
 	 * target list is parallel-safe.
 	 */
 	if (input_rel->consider_parallel && target_parallel_safe)
+	{
 		ordered_rel->consider_parallel = true;
+		ordered_rel->params_req_for_parallel = bms_copy(input_rel->params_req_for_parallel);
+	}
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the ordered_rel.
@@ -7072,6 +7086,8 @@ create_partial_grouping_paths(PlannerInfo *root,
 											grouped_rel->relids);
 	partially_grouped_rel->consider_parallel =
 		grouped_rel->consider_parallel;
+	partially_grouped_rel->params_req_for_parallel =
+		bms_copy(grouped_rel->params_req_for_parallel);
 	partially_grouped_rel->reloptkind = grouped_rel->reloptkind;
 	partially_grouped_rel->serverid = grouped_rel->serverid;
 	partially_grouped_rel->userid = grouped_rel->userid;

@@ -125,6 +125,7 @@ query_planner(PlannerInfo *root,
 					 debug_parallel_query != DEBUG_PARALLEL_OFF))
 					final_rel->consider_parallel =
 						is_parallel_safe(root, parse->jointree->quals);
+						/* TODO: what about params_req_for_parallel here? */
 
 				/*
 				 * The only path for it is a trivial Result path.  We cheat a
