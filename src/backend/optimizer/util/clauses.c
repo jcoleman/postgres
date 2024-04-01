@@ -793,8 +793,10 @@ is_parallel_safe_with_params(PlannerInfo *root, Node *node, Bitmapset **required
 
 	/*
 	 * The params that refer to the same or parent query level are considered
-	 * parallel-safe.  The idea is that we compute such params at Gather or
-	 * Gather Merge node and pass their value to workers.
+	 * parallel-safe when they can be computed once. We compute such params at
+	 * Gather or Gather Merge node and pass their value to workers at startup.
+	 * This works for init plans, but not for other subplans where params would
+	 * need to be re-passed to workers during query execution.
 	 */
 	for (proot = root; proot != NULL; proot = proot->parent_root)
 	{

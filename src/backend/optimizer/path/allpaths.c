@@ -3076,7 +3076,34 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
 	 * within the current rel since we can't pass them to workers.
 	 */
 	if (!bms_is_empty(rel->params_req_for_parallel))
+	{
+		Bitmapset *plan_param_ids = NULL;
+		Relids paramsRelids = NULL;
+		Relids pathReqOuter = NULL;
+
+		foreach(lc, root->plan_params)
+		{
+			PlannerParamItem *ppi = (PlannerParamItem *) lfirst(lc);
+
+			plan_param_ids = bms_add_member(plan_param_ids, ppi->paramId);
+
+			if (IsA(ppi->item, Var))
+			{
+				Var *var = (Var *) ppi->item;
+
+				paramsRelids = bms_add_member(paramsRelids, var->varno);
+			}
+		}
+
+		cheapest_partial_path = linitial(rel->partial_pathlist);
+		pathReqOuter = PATH_REQ_OUTER(cheapest_partial_path);
+
+		pathReqOuter = pathReqOuter;
+
+		elog(WARNING, "params_req_for_parallel not empty");
+
 		return;
+	}
 
 	/* Should we override the rel's rowcount estimate? */
 	if (override_rows)
@@ -3221,7 +3248,10 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	 * within the current rel since we can't pass them to workers.
 	 */
 	if (!bms_is_empty(rel->params_req_for_parallel))
+	{
+		elog(WARNING, "params_req_for_parallel not empty");
 		return;
+	}
 
 	/* Should we override the rel's rowcount estimate? */
 	if (override_rows)
