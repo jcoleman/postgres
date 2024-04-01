@@ -58,6 +58,8 @@ select sp_test_func() order by 1;
 create table part_pa_test(a int, b int) partition by range(a);
 create table part_pa_test_p1 partition of part_pa_test for values from (minvalue) to (0);
 create table part_pa_test_p2 partition of part_pa_test for values from (0) to (maxvalue);
+-- Ensure we track required params into UPPER_RELs.
+explain (costs off, verbose) select * from part_pa_test where a = (select max(p.a) from part_pa_test p where p.b = part_pa_test.b);
 explain (costs off, verbose)
 	select (select max((select pa1.b from part_pa_test pa1 where pa1.a = pa2.a)))
 	from part_pa_test pa2;
