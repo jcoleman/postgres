@@ -451,26 +451,36 @@ explain (costs off, verbose) select * from tenk1 t where t.two in (
   join tenk1 t3 on t3.stringu1 = tenk1.stringu1
   where tenk1.four = t.four
 );
-                                                                                                                          QUERY PLAN                                                                                                                           
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Seq Scan on public.tenk1 t
+                                                                                                                                  QUERY PLAN                                                                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Hash Join
    Output: t.unique1, t.unique2, t.two, t.four, t.ten, t.twenty, t.hundred, t.thousand, t.twothousand, t.fivethous, t.tenthous, t.odd, t.even, t.stringu1, t.stringu2, t.string4
-   Filter: (SubPlan 1)
-   SubPlan 1
-     ->  Hash Join
-           Output: t.two
-           Hash Cond: (tenk1.stringu1 = t3.stringu1)
-           ->  Seq Scan on public.tenk1
-                 Output: tenk1.unique1, tenk1.unique2, tenk1.two, tenk1.four, tenk1.ten, tenk1.twenty, tenk1.hundred, tenk1.thousand, tenk1.twothousand, tenk1.fivethous, tenk1.tenthous, tenk1.odd, tenk1.even, tenk1.stringu1, tenk1.stringu2, tenk1.string4
-                 Filter: (tenk1.four = t.four)
-           ->  Hash
-                 Output: t3.stringu1
-                 ->  Gather
-                       Output: t3.stringu1
-                       Workers Planned: 4
-                       ->  Parallel Seq Scan on public.tenk1 t3
-                             Output: t3.stringu1
-(17 rows)
+   Inner Unique: true
+   Hash Cond: (t.four = tenk1.four)
+   ->  Gather
+         Output: t.unique1, t.unique2, t.two, t.four, t.ten, t.twenty, t.hundred, t.thousand, t.twothousand, t.fivethous, t.tenthous, t.odd, t.even, t.stringu1, t.stringu2, t.string4
+         Workers Planned: 4
+         ->  Parallel Seq Scan on public.tenk1 t
+               Output: t.unique1, t.unique2, t.two, t.four, t.ten, t.twenty, t.hundred, t.thousand, t.twothousand, t.fivethous, t.tenthous, t.odd, t.even, t.stringu1, t.stringu2, t.string4
+               Filter: (t.two IS NOT NULL)
+   ->  Hash
+         Output: tenk1.four
+         ->  HashAggregate
+               Output: tenk1.four
+               Group Key: tenk1.four
+               ->  Gather
+                     Output: tenk1.four
+                     Workers Planned: 4
+                     ->  Parallel Hash Join
+                           Output: tenk1.four
+                           Hash Cond: (tenk1.stringu1 = t3.stringu1)
+                           ->  Parallel Seq Scan on public.tenk1
+                                 Output: tenk1.unique1, tenk1.unique2, tenk1.two, tenk1.four, tenk1.ten, tenk1.twenty, tenk1.hundred, tenk1.thousand, tenk1.twothousand, tenk1.fivethous, tenk1.tenthous, tenk1.odd, tenk1.even, tenk1.stringu1, tenk1.stringu2, tenk1.string4
+                           ->  Parallel Hash
+                                 Output: t3.stringu1
+                                 ->  Parallel Seq Scan on public.tenk1 t3
+                                       Output: t3.stringu1
+(27 rows)
 
 -- this is not parallel-safe due to use of random() within SubLink's testexpr:
 explain (costs off)
