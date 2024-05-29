@@ -122,9 +122,21 @@ query_planner(PlannerInfo *root,
 				if (root->glob->parallelModeOK &&
 					(root->query_level > 1 ||
 					 debug_parallel_query != DEBUG_PARALLEL_OFF))
+				{
+					/* final_rel->consider_parallel = */
+					/* 	is_parallel_safe(root, parse->jointree->quals); */
+
+					/* TODO: no tests change as a result of this */
 					final_rel->consider_parallel =
-						is_parallel_safe(root, parse->jointree->quals);
-						/* TODO: what about params_req_for_parallel here? */
+						is_parallel_safe_with_params(root,
+													 parse->jointree->quals,
+													 &final_rel->params_req_for_parallel);
+					/* TODO: what about params_req_for_parallel here?
+					 * RTE_RESULT can contain a PlaceHolderVar, which can
+					 * have a lateral reference; see optimizer/README */
+					/* elog(WARNING, "didn't set params_req_for_parallel on RTE_RESULT"); */
+				}
+
 
 				/*
 				 * The only path for it is a trivial Result path.  We cheat a
