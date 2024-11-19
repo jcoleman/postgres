@@ -493,7 +493,7 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
   <itemizedlist>
     <listitem>
       <para>
-        Scans of common table expressions (CTEs).
+        Scans of common table expressions (CTEs) which must be materialized.
       </para>
     </listitem>
 
